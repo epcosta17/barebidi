@@ -18,7 +18,7 @@ from .context import Context
 from .dialogs import DialogHandler, Dialogs
 from .downloads import Downloads
 from .network import Intercept, InterceptHandler, Network, Phase
-from .proxy import NO_PROXY_PREFS, Proxy
+from .proxy import NO_PROXY_PREFS, Proxy, Relay
 from .stealth import CLEAR_AUTOMATION_FLAG, HIDE_WEBDRIVER
 from .stealth import PREFS as STEALTH_PREFS
 from .tab import Tab
@@ -150,6 +150,7 @@ class Browser:
         self._downloader = Downloads(self)
         self._downloads_dir: str | None = None
         self._scratch: Path | None = None
+        self._relays: list[Relay] = []
         self.context = Context(self, "default")
 
     async def __aenter__(self) -> "Browser":
@@ -169,6 +170,8 @@ class Browser:
             self._profile = str(self.profile)
         else:
             self._profile = tempfile.mkdtemp(prefix="nodriver-bidi-", dir=self._scratch)
+        if self.proxy and self.proxy.credentials:
+            self.prefs |= (await self._relay(self.proxy)).local.prefs()
         prefs = "".join(f"user_pref({json.dumps(k)}, {json.dumps(v)});\n" for k, v in self.prefs.items())
         Path(self._profile, "user.js").write_text(prefs)
 
@@ -193,8 +196,6 @@ class Browser:
             session = await self.connection.send("session.new", {"capabilities": {"alwaysMatch": {"unhandledPromptBehavior": prompts}}})
             await self._track_frames()
             await self._watch_dialogs_and_downloads()
-            if self.proxy:
-                await self._network.register_proxy(None, self.proxy.credentials)
             await self.context._emulate(self.locale, self.timezone)
             if self.stealth:
                 await self._clear_automation_flag()
@@ -235,10 +236,11 @@ class Browser:
     async def new_context(self, *, proxy: str | None = None, locale: str | None = None, timezone: str | None = None) -> Context:
         """A new isolated identity, gone when closed or when the browser stops."""
         parsed = Proxy.parse(proxy) if proxy else None
-        result = await self.connection.send("browser.createUserContext", {"proxy": parsed.bidi()} if parsed else {})
+        relay = await self._relay(parsed) if parsed and parsed.credentials else None
+        config = relay.local if relay else parsed
+        result = await self.connection.send("browser.createUserContext", {"proxy": config.bidi()} if config else {})
         context = Context(self, result["userContext"])
-        if parsed:
-            await self._network.register_proxy(context.id, parsed.credentials)
+        context._relay = relay
         await context._emulate(locale, timezone)
         return context
 
@@ -288,6 +290,12 @@ class Browser:
 
     def user_context_of(self, context: str) -> str:
         return self._user_contexts.get(context, "default")
+
+    async def _relay(self, proxy: Proxy) -> Relay:
+        """Firefox's way to a proxy with credentials, which it then never has to handle (see Relay)."""
+        relay = await Relay(proxy).start()
+        self._relays.append(relay)
+        return relay
 
     async def _clear_automation_flag(self) -> None:
         await self._chrome_eval(CLEAR_AUTOMATION_FLAG)
@@ -433,6 +441,9 @@ class Browser:
         if self._stderr_task:
             self._stderr_task.cancel()
         await self._kill_strays()
+        for relay in self._relays:
+            relay.close()
+        self._relays.clear()
         if self._profile and self.profile is None:
             shutil.rmtree(self._profile, ignore_errors=True)
         if self._downloads_dir and self.downloads is None:

@@ -5,3 +5,10 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+
+
+# Proxy lists carry credentials: never in git nor in the image
+docker/*.txt
+*proxies*.txt
+webshare*.txt
+.DS_Store

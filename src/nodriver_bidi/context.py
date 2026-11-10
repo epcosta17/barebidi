@@ -6,6 +6,7 @@ from .tab import Tab
 
 if TYPE_CHECKING:
     from .browser import Browser
+    from .proxy import Relay
 
 _COOKIE_FIELDS = ("name", "domain", "path", "httpOnly", "secure", "sameSite", "expiry")
 
@@ -19,6 +20,7 @@ class Context:
     def __init__(self, browser: "Browser", user_context: str):
         self.browser = browser
         self.id = user_context
+        self._relay: "Relay | None" = None  # in front of its proxy, if that one needs credentials
 
     def __repr__(self) -> str:
         return f"<Context {self.id}>"
@@ -69,7 +71,9 @@ class Context:
         if self.id == "default":
             raise ValueError("the default context lives as long as the browser")
         await self.browser.connection.send("browser.removeUserContext", {"userContext": self.id})
-        self.browser._network.forget_proxy(self.id)
+        if self._relay:
+            self._relay.close()
+            self.browser._relays.remove(self._relay)
 
     async def _emulate(self, locale: str | None, timezone: str | None) -> None:
         # Firefox applies these to the page, its iframes and workers alike, and the locale to Accept-Language.

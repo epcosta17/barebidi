@@ -40,6 +40,17 @@ async def test_proxy_credentials(server, auth_proxy):
         assert await proxy_name(tab) == "auth"
 
 
+async def test_credentials_go_with_every_request(server, auth_proxy):
+    # A 407 that BiDi can't answer (Firefox's own background requests, for one) opens a dialog asking the
+    # person for the proxy's password, which blocks the browser: the proxy must never need to ask.
+    async with nb.Browser(headless=True, proxy=with_credentials(auth_proxy), prefs=LOCAL_PROXY_PREFS) as browser:
+        tab = await browser.get(f"{server}/index.html")
+        assert await proxy_name(tab) == "auth"
+        context = await browser.new_context(proxy=with_credentials(auth_proxy))
+        assert await proxy_name(await context.new_tab(f"{server}/index.html")) == "auth"
+    assert auth_proxy.challenges == 0
+
+
 async def test_wrong_credentials_give_up(server, auth_proxy):
     async with nb.Browser(headless=True, proxy=with_credentials(auth_proxy, "user:wrong"), prefs=LOCAL_PROXY_PREFS) as browser:
         tab = (await browser.tabs())[0]

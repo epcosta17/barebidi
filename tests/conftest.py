@@ -72,6 +72,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
         if self.server.credentials:
             expected = "Basic " + base64.b64encode(self.server.credentials.encode()).decode()
             if self.headers.get("Proxy-Authorization") != expected:
+                self.server.challenges += 1
                 self.send_response(407)
                 self.send_header("Proxy-Authenticate", 'Basic realm="test proxy"')
                 self.send_header("Content-Length", "0")
@@ -104,6 +105,7 @@ def start_proxy(name: str, credentials: str | None = None) -> ThreadingHTTPServe
     httpd.name = name
     httpd.credentials = credentials
     httpd.requests = []
+    httpd.challenges = 0  # 407s sent
     httpd.url = f"http://127.0.0.1:{httpd.server_address[1]}"
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd
