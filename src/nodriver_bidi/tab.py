@@ -9,6 +9,8 @@ from .frame import SANDBOX, Frame, JavaScriptError
 
 if TYPE_CHECKING:
     from .connection import Handler
+    from .dialogs import DialogHandler
+    from .downloads import ExpectedDownload
     from .network import ExpectedResponse, Intercept, InterceptHandler, Phase, ResponseHandler, ResponseMatch
 
 __all__ = ["SANDBOX", "JavaScriptError", "Tab"]
@@ -19,12 +21,13 @@ Wait = Literal["none", "interactive", "complete"]
 class Tab(Frame):
     """A browser tab: its page (all of Frame), plus navigation, the mouse wheel, screenshots, events and network."""
 
-    async def get(self, url: str, wait: Wait = "complete") -> "Tab":
-        await self.send("browsingContext.navigate", {"context": self.id, "url": url, "wait": wait})
+    async def get(self, url: str, wait: Wait = "complete", timeout: float | None = None) -> "Tab":
+        """Navigate and wait for the page to reach `wait`, at most `timeout` seconds (the browser's by default)."""
+        await self.send("browsingContext.navigate", {"context": self.id, "url": url, "wait": wait}, timeout)
         return self
 
-    async def reload(self, wait: Wait = "complete") -> "Tab":
-        await self.send("browsingContext.reload", {"context": self.id, "wait": wait})
+    async def reload(self, wait: Wait = "complete", timeout: float | None = None) -> "Tab":
+        await self.send("browsingContext.reload", {"context": self.id, "wait": wait}, timeout)
         return self
 
     async def back(self) -> None:
@@ -60,6 +63,24 @@ class Tab(Frame):
                 return handler(params)
 
         return await self.browser.on(event, scoped, contexts=[self.id])
+
+    async def on_dialog(self, handler: "DialogHandler") -> Callable[[], None]:
+        """Call `handler` with each dialog this tab opens (alert, confirm, prompt, "leave page?"); it answers
+        with dialog.accept() or dialog.dismiss(). Returns a function that stops it.
+
+        Unanswered dialogs get what Firefox does on its own: alerts and "leave page?" accepted, confirms and
+        prompts dismissed; when humanized, after the time a person takes to read them.
+        """
+        return self.browser._dialogs.add(handler, self.id)
+
+    def expect_download(self, timeout: float = 30.0) -> AbstractAsyncContextManager["ExpectedDownload"]:
+        """Wait for a download started inside the block:
+
+        async with tab.expect_download() as expected:
+            await link.click()
+        path = await expected.download.path()
+        """
+        return self.browser._downloader.expect(self.id, timeout)
 
     async def intercept(self, handler: "InterceptHandler", url: str | None = None, phase: "Phase" = "request") -> "Intercept":
         """Like Browser.intercept, for this tab's requests (iframes included)."""

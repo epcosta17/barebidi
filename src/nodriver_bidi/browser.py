@@ -5,15 +5,18 @@ import logging
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterator, Callable, Iterable
 from pathlib import Path
 from typing import Any
 
 from .connection import BidiError, Connection, Handler
 from .context import Context
+from .dialogs import DialogHandler, Dialogs
+from .downloads import Downloads
 from .network import Intercept, InterceptHandler, Network, Phase
 from .proxy import NO_PROXY_PREFS, Proxy
 from .stealth import CLEAR_AUTOMATION_FLAG, HIDE_WEBDRIVER
@@ -23,6 +26,10 @@ from .tab import Tab
 log = logging.getLogger(__name__)
 
 _WS_URL = re.compile(rb"WebDriver BiDi listening on (ws://\S+)")
+
+
+class _ExitedDuringStartup(RuntimeError):
+    pass
 
 DEFAULT_HEADLESS_SCREEN = (1920, 1080)
 
@@ -65,6 +72,19 @@ def find_firefox() -> str:
     raise FileNotFoundError("Firefox not found; install it or set FIREFOX_PATH")
 
 
+def _is_snap(executable: str) -> bool:
+    """A snap-packaged Firefox (Ubuntu's default), directly or through the script Ubuntu puts in /usr/bin."""
+    resolved = Path(executable).resolve()
+    if resolved.parts[:2] == ("/", "snap"):
+        return True
+    try:
+        with open(resolved, "rb") as file:
+            head = file.read(4096)
+    except OSError:
+        return False
+    return head.startswith(b"#!") and b"/snap/" in head
+
+
 class Browser:
     """Firefox driven over WebDriver BiDi.
 
@@ -72,7 +92,9 @@ class Browser:
     cookies and storage between runs instead of starting from a temporary profile. `screen` is the
     size of the virtual screen in headless mode; otherwise the real screen is used. With `humanize`,
     the mouse travels in curves, keys are typed at a human rhythm and scrolling uses the wheel;
-    turn it off (here or later through the attribute) for speed.
+    turn it off (here or later through the attribute) for speed. Downloaded files go to `downloads`,
+    or to a temporary folder that disappears with the browser. `timeout` is how many seconds Firefox
+    gets to answer each command (None waits forever); slow pages can get more through Tab.get.
     """
 
     def __init__(
@@ -89,6 +111,8 @@ class Browser:
         executable_path: str | None = None,
         args: Iterable[str] = (),
         prefs: dict[str, Any] | None = None,
+        downloads: str | Path | None = None,
+        timeout: float | None = 60.0,
         startup_timeout: float = 30.0,
     ):
         if screen and not headless:
@@ -98,6 +122,7 @@ class Browser:
         self.stealth = stealth
         self.humanize = humanize
         self.profile = Path(profile) if profile else None
+        self.downloads = Path(downloads) if downloads else None  # where files go; a temporary folder if None
         self.proxy = Proxy.parse(proxy) if proxy else None
         self.locale = locale
         self.timezone = timezone
@@ -109,6 +134,7 @@ class Browser:
             **(self.proxy.prefs() if self.proxy else NO_PROXY_PREFS),
             **(prefs or {}),
         }
+        self.timeout = timeout  # seconds Firefox gets to answer each command; mouse and keyboard add their own duration
         self.startup_timeout = startup_timeout
         self.connection: Connection
         self.session_id: str | None = None
@@ -120,6 +146,10 @@ class Browser:
         self._user_contexts: dict[str, str] = {}
         self._pointers: dict[str, tuple[int, int]] = {}
         self._network = Network(self)
+        self._dialogs = Dialogs(self)
+        self._downloader = Downloads(self)
+        self._downloads_dir: str | None = None
+        self._scratch: Path | None = None
         self.context = Context(self, "default")
 
     async def __aenter__(self) -> "Browser":
@@ -129,34 +159,40 @@ class Browser:
         await self.stop()
 
     async def start(self) -> "Browser":
+        executable = self.executable_path or find_firefox()
+        # A snap's /tmp is its own: keep our temporary folders where a snap-packaged Firefox can reach them.
+        self._scratch = Path.home() / "snap" / "firefox" / "common" if _is_snap(executable) else None
+        if self._scratch:
+            self._scratch.mkdir(parents=True, exist_ok=True)
         if self.profile:
             self.profile.mkdir(parents=True, exist_ok=True)
             self._profile = str(self.profile)
         else:
-            self._profile = tempfile.mkdtemp(prefix="nodriver-bidi-")
+            self._profile = tempfile.mkdtemp(prefix="nodriver-bidi-", dir=self._scratch)
         prefs = "".join(f"user_pref({json.dumps(k)}, {json.dumps(v)});\n" for k, v in self.prefs.items())
         Path(self._profile, "user.js").write_text(prefs)
 
-        cmd = [self.executable_path or find_firefox(), "--remote-debugging-port=0", "--profile", self._profile, "--no-remote"]
+        cmd = [executable, "--remote-debugging-port=0", "--profile", self._profile, "--no-remote"]
         if self.headless:
             cmd.append("--headless")
+        env = dict(os.environ)
         if self.stealth:
+            # Access to the browser's own scope; older Firefox takes the flag, newer ones only the variable.
             cmd.append("--remote-allow-system-access")
+            env["MOZ_REMOTE_ALLOW_SYSTEM_ACCESS"] = "1"
         cmd += [*self.args, "about:blank"]
-        env = None
         if self.headless:
             width, height = self.screen
-            env = {**os.environ, "MOZ_HEADLESS_WIDTH": str(width), "MOZ_HEADLESS_HEIGHT": str(height)}
-        log.debug("launching %s", cmd)
-        self._process = await asyncio.create_subprocess_exec(
-            *cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=env
-        )
+            env |= {"MOZ_HEADLESS_WIDTH": str(width), "MOZ_HEADLESS_HEIGHT": str(height)}
         try:
-            url = await asyncio.wait_for(self._read_ws_url(), self.startup_timeout)
+            url = await self._launch(cmd, env)
             self._stderr_task = asyncio.create_task(self._drain_stderr())
-            self.connection = await Connection.connect(f"{url}/session")
-            session = await self.connection.send("session.new", {"capabilities": {}})
+            self.connection = await Connection.connect(f"{url}/session", self.timeout)
+            # Dialogs wait for us to answer them (see Dialogs); native file pickers are cancelled at once.
+            prompts = {"default": "ignore", "file": "dismiss"}
+            session = await self.connection.send("session.new", {"capabilities": {"alwaysMatch": {"unhandledPromptBehavior": prompts}}})
             await self._track_frames()
+            await self._watch_dialogs_and_downloads()
             if self.proxy:
                 await self._network.register_proxy(None, self.proxy.credentials)
             await self.context._emulate(self.locale, self.timezone)
@@ -215,6 +251,10 @@ class Browser:
     async def clear_cookies(self) -> None:
         await self.context.clear_cookies()
 
+    async def on_dialog(self, handler: DialogHandler) -> Callable[[], None]:
+        """Like Tab.on_dialog, for the dialogs of every tab."""
+        return self._dialogs.add(handler)
+
     async def on(self, event: str, handler: Handler, contexts: list[str] | None = None) -> str:
         """Subscribe to a BiDi event or module ("network.responseCompleted", "log")."""
         self.connection.on(event, handler)
@@ -257,6 +297,8 @@ class Browser:
         """Mouse input sent to a frame goes straight into its document instead of through the window."""
         switch = f"Services.prefs.setBoolPref({json.dumps(ROUTED_MOUSE)}, %s)"
         switched = bool(self.prefs.get(ROUTED_MOUSE)) and await self._chrome_eval(switch % "false")
+        if self.prefs.get(ROUTED_MOUSE) and not switched:
+            log.warning("no access to the browser's scope (it needs stealth=True): mouse input can't go straight into the frame")
         try:
             yield
         finally:
@@ -320,6 +362,37 @@ class Browser:
             "session.subscribe", {"events": ["browsingContext.contextCreated", "browsingContext.contextDestroyed"]}
         )
 
+    async def _watch_dialogs_and_downloads(self) -> None:
+        self.connection.on("browsingContext.userPromptOpened", self._dialogs.opened)
+        self.connection.on("browsingContext.downloadWillBegin", self._downloader.begun)
+        self.connection.on("browsingContext.downloadEnd", self._downloader.ended)
+        events = ["browsingContext.userPromptOpened", "browsingContext.downloadWillBegin", "browsingContext.downloadEnd"]
+        await self.connection.send("session.subscribe", {"events": events})
+        if self.downloads:
+            self.downloads.mkdir(parents=True, exist_ok=True)
+            self._downloads_dir = str(self.downloads.resolve())
+        else:
+            self._downloads_dir = tempfile.mkdtemp(prefix="nodriver-bidi-downloads-", dir=self._scratch)
+        behavior = {"type": "allowed", "destinationFolder": self._downloads_dir}
+        await self.connection.send("browser.setDownloadBehavior", {"downloadBehavior": behavior})
+
+    async def _launch(self, cmd: list[str], env: dict[str, str]) -> str:
+        """Start Firefox and return its WebDriver BiDi URL."""
+        for attempt in range(2):
+            log.debug("launching %s", cmd)
+            self._process = await asyncio.create_subprocess_exec(
+                *cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=env
+            )
+            try:
+                return await asyncio.wait_for(self._read_ws_url(), self.startup_timeout)
+            except _ExitedDuringStartup:
+                # Right after an update Firefox may restart itself to finish it: the copy that carries on
+                # isn't one we can talk to, so close it and start again.
+                await self._kill_strays()
+                if attempt:
+                    raise
+        raise AssertionError("unreachable")
+
     async def _read_ws_url(self) -> str:
         assert self._process and self._process.stderr
         output = []
@@ -327,7 +400,23 @@ class Browser:
             output.append(line)
             if match := _WS_URL.search(line):
                 return match.group(1).decode()
-        raise RuntimeError("Firefox exited during startup:\n" + b"".join(output).decode(errors="replace"))
+        raise _ExitedDuringStartup("Firefox exited during startup:\n" + b"".join(output).decode(errors="replace"))
+
+    async def _kill_strays(self) -> None:
+        """Close every Firefox still running on our profile, such as one that restarted itself."""
+        if not self._profile or sys.platform == "win32":
+            return
+        ours = f"--remote-debugging-port=0 --profile {self._profile}"  # only processes we launched
+        for attempt in range(50):
+            ps = await asyncio.create_subprocess_exec("ps", "-A", "-ww", "-o", "pid=,command=", stdout=subprocess.PIPE)
+            listing = (await ps.communicate())[0].decode(errors="replace")
+            pids = [int(line.split(None, 1)[0]) for line in listing.splitlines() if ours in line]
+            if not pids:
+                return
+            for pid in pids:
+                with contextlib.suppress(ProcessLookupError):
+                    os.kill(pid, signal.SIGKILL if attempt >= 30 else signal.SIGTERM)
+            await asyncio.sleep(0.1)
 
     async def _drain_stderr(self) -> None:
         assert self._process and self._process.stderr
@@ -343,8 +432,11 @@ class Browser:
                 await self._process.wait()
         if self._stderr_task:
             self._stderr_task.cancel()
+        await self._kill_strays()
         if self._profile and self.profile is None:
             shutil.rmtree(self._profile, ignore_errors=True)
+        if self._downloads_dir and self.downloads is None:
+            shutil.rmtree(self._downloads_dir, ignore_errors=True)
         self._process = None
 
 

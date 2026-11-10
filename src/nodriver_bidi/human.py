@@ -110,6 +110,13 @@ def wheel_steps(distance: int) -> list[tuple[int, int]]:
     return steps
 
 
+def dialog_time(message: str, text: str | None = None) -> int:
+    """Milliseconds a person takes to answer a dialog: notice it, read it, type `text` if any, click."""
+    reading = between(450, 900) + 35 * min(len(message), 120)
+    typing = sum(hold + pause for _, hold, pause in keystrokes(text)) if text else 0
+    return reading + typing + between(150, 350)
+
+
 def key_actions(text: str, humanize: bool) -> list[dict]:
     """BiDi key actions for `text`, holding Shift for capitals and symbols like a keyboard would."""
     actions: list[dict] = [_pause(between(150, 450))] if humanize else []

@@ -1,0 +1,11 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>dialogs</title></head>
+<body>
+  <button id="alert" onclick="alert('hola'); document.body.dataset.alert = 'closed'">alert</button>
+  <button id="confirm" onclick="document.body.dataset.confirm = confirm('¿seguro?')">confirm</button>
+  <button id="prompt" onclick="document.body.dataset.prompt = prompt('¿nombre?', 'ana')">prompt</button>
+  <button id="timed" onclick="const t = performance.now(); confirm('¿seguro?'); document.body.dataset.waited = performance.now() - t">timed</button>
+  <button id="guard" onclick="onbeforeunload = event => { event.preventDefault(); event.returnValue = '' }">guard</button>
+</body>
+</html>

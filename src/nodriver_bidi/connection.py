@@ -13,6 +13,8 @@ log = logging.getLogger(__name__)
 
 Handler = Callable[[dict], Any]
 
+_GONE = "Firefox closed the connection: it was stopped, exited or crashed"
+
 
 class BidiError(Exception):
     def __init__(self, error: str, message: str, stacktrace: str | None = None):
@@ -22,9 +24,14 @@ class BidiError(Exception):
         self.stacktrace = stacktrace
 
 
+class BrowserClosedError(ConnectionError):
+    """Firefox is gone: it was stopped, exited or crashed."""
+
+
 class Connection:
-    def __init__(self, ws: ClientConnection):
+    def __init__(self, ws: ClientConnection, timeout: float | None = None):
         self._ws = ws
+        self.timeout = timeout  # default seconds to wait for each answer; None waits forever
         self._ids = itertools.count(1)
         self._pending: dict[int, asyncio.Future] = {}
         self._handlers: dict[str, list[Handler]] = defaultdict(list)
@@ -32,24 +39,32 @@ class Connection:
         self._reader = asyncio.create_task(self._read_loop())
 
     @classmethod
-    async def connect(cls, url: str) -> "Connection":
-        return cls(await connect(url, max_size=None))
+    async def connect(cls, url: str, timeout: float | None = None) -> "Connection":
+        return cls(await connect(url, max_size=None), timeout)
 
     @property
     def closed(self) -> bool:
         return self._reader.done()
 
-    async def send(self, method: str, params: dict | None = None) -> dict:
+    async def send(self, method: str, params: dict | None = None, timeout: float | None = None) -> dict:
+        """Send a command and wait for its result, at most `timeout` seconds (by default, the connection's)."""
         if self.closed:
-            raise ConnectionError("connection is closed")
+            raise BrowserClosedError(_GONE)
         msg_id = next(self._ids)
         future = asyncio.get_running_loop().create_future()
         self._pending[msg_id] = future
         payload = json.dumps({"id": msg_id, "method": method, "params": params or {}})
         log.debug("-> %s", payload)
+        timeout = self.timeout if timeout is None else timeout
         try:
-            await self._ws.send(payload)
-            return await future
+            try:
+                await self._ws.send(payload)
+            except ConnectionClosed as error:
+                raise BrowserClosedError(_GONE) from error
+            try:
+                return await asyncio.wait_for(future, timeout)
+            except TimeoutError:
+                raise TimeoutError(f"Firefox didn't answer {method} within {timeout}s") from None
         finally:
             self._pending.pop(msg_id, None)
 
@@ -79,7 +94,7 @@ class Connection:
         finally:
             for future in self._pending.values():
                 if not future.done():
-                    future.set_exception(ConnectionError("connection closed"))
+                    future.set_exception(BrowserClosedError(_GONE))
 
     def _resolve(self, msg: dict) -> None:
         future = self._pending.get(msg.get("id"))

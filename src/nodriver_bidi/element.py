@@ -126,6 +126,11 @@ class Element:
         frame.element = self
         return frame
 
+    async def set_files(self, *paths: str | Path) -> None:
+        """Choose files for this <input type="file">, as if picked in its file dialog."""
+        files = [str(Path(path).resolve(strict=True)) for path in paths]
+        await self.frame.send("input.setFiles", {"context": self.frame.id, "element": self.reference, "files": files})
+
     async def scroll_into_view(self) -> None:
         """Jump to the element (no wheel events); hover() and click() scroll with the wheel instead."""
         await self.call("function() { this.scrollIntoView({block: 'center', inline: 'center'}) }", isolated=True)

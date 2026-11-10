@@ -78,8 +78,8 @@ class Frame:
     def __hash__(self) -> int:
         return hash(self.id)
 
-    async def send(self, method: str, params: dict | None = None) -> dict:
-        return await self.browser.connection.send(method, params)
+    async def send(self, method: str, params: dict | None = None, timeout: float | None = None) -> dict:
+        return await self.browser.connection.send(method, params, timeout)
 
     async def url(self) -> str:
         tree = await self.send("browsingContext.getTree", {"root": self.id, "maxDepth": 0})
@@ -256,7 +256,11 @@ class Frame:
         await self._perform({"type": "pointer", "id": "mouse", "parameters": {"pointerType": "mouse"}, "actions": actions})
 
     async def _perform(self, source: dict) -> None:
-        await self.send("input.performActions", {"context": self.id, "actions": [source]})
+        # The command lasts as long as its actions take, so the timeout counts on top of that.
+        timeout = self.browser.connection.timeout
+        if timeout is not None:
+            timeout += sum(action.get("duration", 0) for action in source["actions"]) / 1000
+        await self.send("input.performActions", {"context": self.id, "actions": [source]}, timeout)
 
     def _target(self, isolated: bool) -> dict:
         return {"context": self.id, "sandbox": SANDBOX} if isolated else {"context": self.id}

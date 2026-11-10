@@ -3,9 +3,10 @@ import functools
 import http.client
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -18,12 +19,28 @@ LOCAL_PROXY_PREFS = {"network.proxy.allow_hijacking_localhost": True}
 
 
 class Handler(SimpleHTTPRequestHandler):
-    """Static files from tests/pages plus /echo, which returns what the server received."""
+    """Static files from tests/pages, plus /echo (what the server received), /hang?seconds=N (a page
+    that takes that long) and /download?name=F (a small CSV served as an attachment)."""
 
     def do_GET(self):
         if self.path.startswith("/echo"):
             return self._echo(b"")
+        if self.path.startswith("/hang"):
+            time.sleep(float(parse_qs(urlsplit(self.path).query).get("seconds", ["5"])[0]))
+            return self._send(b"<!doctype html><title>late</title>", "text/html")
+        if self.path.startswith("/download"):
+            name = parse_qs(urlsplit(self.path).query).get("name", ["report.csv"])[0]
+            return self._send(b"a,b\n1,2\n", "text/csv", {"Content-Disposition": f'attachment; filename="{name}"'})
         super().do_GET()
+
+    def _send(self, body: bytes, content_type: str, headers: dict[str, str] | None = None):
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_POST(self):
         return self._echo(self.rfile.read(int(self.headers.get("Content-Length", 0))))

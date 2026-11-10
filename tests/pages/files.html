@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>files</title></head>
+<body>
+  <input type="file" id="file" multiple>
+  <a id="csv" href="/download?name=report.csv">report</a>
+  <script>
+    window.events = [];
+    const input = document.getElementById('file');
+    for (const type of ['click', 'cancel', 'input', 'change'])
+      input.addEventListener(type, event => events.push([type, event.isTrusted]));
+    window.contents = () => Promise.all([...input.files].map(file => file.text().then(text => [file.name, text])));
+  </script>
+</body>
+</html>
