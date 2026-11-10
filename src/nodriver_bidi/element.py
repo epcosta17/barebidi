@@ -33,27 +33,27 @@ class Element:
     def reference(self) -> dict:
         return {"sharedId": self.shared_id}
 
-    async def call(self, function: str, *args: Any) -> Any:
+    async def call(self, function: str, *args: Any, isolated: bool = False) -> Any:
         """Run `function` in the page with `this` bound to this element."""
-        return await self.tab.call_function(function, *args, this=self)
+        return await self.tab.call_function(function, *args, this=self, isolated=isolated)
 
     async def text(self) -> str:
-        return await self.call("function() { return this.textContent }")
+        return await self.call("function() { return this.textContent }", isolated=True)
 
     async def inner_text(self) -> str:
-        return await self.call("function() { return this.innerText }")
+        return await self.call("function() { return this.innerText }", isolated=True)
 
     async def html(self) -> str:
-        return await self.call("function() { return this.outerHTML }")
+        return await self.call("function() { return this.outerHTML }", isolated=True)
 
     async def get_attribute(self, name: str) -> str | None:
-        return await self.call("function(n) { return this.getAttribute(n) }", name)
+        return await self.call("function(n) { return this.getAttribute(n) }", name, isolated=True)
 
     async def get_property(self, name: str) -> Any:
         return await self.call("function(n) { return this[n] }", name)
 
     async def scroll_into_view(self) -> None:
-        await self.call("function() { this.scrollIntoView({block: 'center', inline: 'center'}) }")
+        await self.call("function() { this.scrollIntoView({block: 'center', inline: 'center'}) }", isolated=True)
 
     async def click(self) -> None:
         await self.scroll_into_view()
@@ -85,7 +85,7 @@ class Element:
         )
 
     async def clear(self) -> None:
-        await self.call("function() { this.value = ''; this.dispatchEvent(new Event('input', {bubbles: true})) }")
+        await self.call("function() { this.value = ''; this.dispatchEvent(new Event('input', {bubbles: true})) }", isolated=True)
 
     async def select(self, css: str, timeout: float = 10.0) -> "Element":
         return await self.tab._first({"type": "css", "value": css}, timeout, css, start=[self.reference])

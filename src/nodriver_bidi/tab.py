@@ -1,5 +1,7 @@
 import asyncio
 import base64
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -9,8 +11,12 @@ from .values import deserialize, serialize
 if TYPE_CHECKING:
     from .browser import Browser
     from .connection import Handler
+    from .network import ExpectedResponse, Intercept, InterceptHandler, Phase, ResponseHandler, ResponseMatch
 
 Wait = Literal["none", "interactive", "complete"]
+
+# Realm for the library's own scripts: pages can neither see them nor tamper with the DOM APIs they use.
+SANDBOX = "nodriver-bidi"
 
 _FIND_TEXT = """(text, exact) => {
   const want = exact ? text : text.toLowerCase();
@@ -73,18 +79,19 @@ class Tab:
     async def close(self) -> None:
         await self.send("browsingContext.close", {"context": self.id})
 
-    async def evaluate(self, expression: str, await_promise: bool = True) -> Any:
+    async def evaluate(self, expression: str, await_promise: bool = True, isolated: bool = False) -> Any:
+        """Run `expression` in the page; with `isolated`, in a sandbox that shares only the DOM."""
         result = await self.send(
             "script.evaluate",
-            {"expression": expression, "target": {"context": self.id}, "awaitPromise": await_promise},
+            {"expression": expression, "target": self._target(isolated), "awaitPromise": await_promise},
         )
         return self._unwrap(result)
 
-    async def call_function(self, function: str, *args: Any, this: Any = None) -> Any:
+    async def call_function(self, function: str, *args: Any, this: Any = None, isolated: bool = False) -> Any:
         params = {
             "functionDeclaration": function,
             "arguments": [serialize(a) for a in args],
-            "target": {"context": self.id},
+            "target": self._target(isolated),
             "awaitPromise": True,
         }
         if this is not None:
@@ -92,10 +99,10 @@ class Tab:
         return self._unwrap(await self.send("script.callFunction", params))
 
     async def content(self) -> str:
-        return await self.evaluate("document.documentElement.outerHTML")
+        return await self.evaluate("document.documentElement.outerHTML", isolated=True)
 
     async def title(self) -> str:
-        return await self.evaluate("document.title")
+        return await self.evaluate("document.title", isolated=True)
 
     async def select(self, css: str, timeout: float = 10.0) -> Element:
         return await self._first({"type": "css", "value": css}, timeout, css)
@@ -112,7 +119,7 @@ class Tab:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
         while True:
-            element = await self.call_function(_FIND_TEXT, text, exact)
+            element = await self.call_function(_FIND_TEXT, text, exact, isolated=True)
             if element is not None:
                 return element
             if loop.time() >= deadline:
@@ -125,10 +132,37 @@ class Tab:
 
     async def on(self, event: str, handler: "Handler") -> str:
         def scoped(params: dict) -> Any:
-            if params.get("context", self.id) == self.id:
+            context = params.get("context")
+            if context is None or self.browser.top_level(context) == self.id:
                 return handler(params)
 
         return await self.browser.on(event, scoped, contexts=[self.id])
+
+    async def intercept(self, handler: "InterceptHandler", url: str | None = None, phase: "Phase" = "request") -> "Intercept":
+        """Like Browser.intercept, for this tab's requests (iframes included)."""
+        return await self.browser._network.intercept(handler, url, phase, contexts=[self.id])
+
+    async def block(self, *urls: str, resource_types: tuple[str, ...] | list[str] = ()) -> "Intercept":
+        return await self.browser._network.block(urls, resource_types, contexts=[self.id])
+
+    async def set_extra_headers(self, headers: dict[str, str]) -> None:
+        await self.browser._network.set_extra_headers(headers, contexts=[self.id])
+
+    async def on_response(self, handler: "ResponseHandler", url: "ResponseMatch" = None) -> Callable[[], None]:
+        """Call `handler` with every completed response that matches; returns a function that stops it.
+
+        `url` is a substring, a glob with `*`, or a predicate on the Response.
+        """
+        return await self.browser._network.on_response(handler, url, tab=self.id)
+
+    def expect_response(self, url: "ResponseMatch" = None, timeout: float = 30.0) -> AbstractAsyncContextManager["ExpectedResponse"]:
+        """Wait for a response triggered inside the block:
+
+        async with tab.expect_response("/api/items") as expected:
+            await button.click()
+        items = await expected.response.json()
+        """
+        return self.browser._network.expect_response(url, timeout, tab=self.id)
 
     async def _first(self, locator: dict, timeout: float, label: str, start: list | None = None) -> Element:
         found = await self._wait_for(locator, timeout, start, max_count=1)
@@ -151,6 +185,9 @@ class Tab:
             if nodes or loop.time() >= deadline:
                 return [Element(self, n) for n in nodes]
             await asyncio.sleep(0.1)
+
+    def _target(self, isolated: bool) -> dict:
+        return {"context": self.id, "sandbox": SANDBOX} if isolated else {"context": self.id}
 
     def _unwrap(self, result: dict) -> Any:
         if result["type"] == "exception":

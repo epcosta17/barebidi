@@ -9,7 +9,7 @@
     <li class="item">three</li>
   </ul>
   <button id="btn" onclick="this.dataset.trusted = event.isTrusted; this.textContent = 'clicked'">Click me</button>
-  <input id="name">
+  <input id="name" oninput="this.dataset.inputs = (+this.dataset.inputs || 0) + 1">
   <div id="later"></div>
   <a id="link" href="/second.html">Go second</a>
   <script>

@@ -11,7 +11,10 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from .connection import Connection, Handler
+from .connection import BidiError, Connection, Handler
+from .network import Intercept, InterceptHandler, Network, Phase
+from .stealth import CLEAR_AUTOMATION_FLAG, HIDE_WEBDRIVER
+from .stealth import PREFS as STEALTH_PREFS
 from .tab import Tab
 
 log = logging.getLogger(__name__)
@@ -54,15 +57,17 @@ class Browser:
         self,
         *,
         headless: bool = False,
+        stealth: bool = True,
         executable_path: str | None = None,
         args: Iterable[str] = (),
         prefs: dict[str, Any] | None = None,
         startup_timeout: float = 30.0,
     ):
         self.headless = headless
+        self.stealth = stealth
         self.executable_path = executable_path
         self.args = list(args)
-        self.prefs = {**DEFAULT_PREFS, **(prefs or {})}
+        self.prefs = {**DEFAULT_PREFS, **(STEALTH_PREFS if stealth else {}), **(prefs or {})}
         self.startup_timeout = startup_timeout
         self.connection: Connection
         self.session_id: str | None = None
@@ -70,6 +75,8 @@ class Browser:
         self._process: asyncio.subprocess.Process | None = None
         self._profile: str | None = None
         self._stderr_task: asyncio.Task | None = None
+        self._parents: dict[str, str] = {}
+        self._network = Network(self)
 
     async def __aenter__(self) -> "Browser":
         return await self.start()
@@ -85,6 +92,8 @@ class Browser:
         cmd = [self.executable_path or find_firefox(), "--remote-debugging-port=0", "--profile", self._profile, "--no-remote"]
         if self.headless:
             cmd.append("--headless")
+        if self.stealth:
+            cmd.append("--remote-allow-system-access")
         cmd += [*self.args, "about:blank"]
         log.debug("launching %s", cmd)
         self._process = await asyncio.create_subprocess_exec(
@@ -95,6 +104,13 @@ class Browser:
             self._stderr_task = asyncio.create_task(self._drain_stderr())
             self.connection = await Connection.connect(f"{url}/session")
             session = await self.connection.send("session.new", {"capabilities": {}})
+            await self._track_frames()
+            if self.stealth:
+                await self._clear_automation_flag()
+            tab = await self._replace_initial_tab()
+            if self.stealth and not await self._webdriver_hidden(tab):
+                log.info("this Firefox keeps navigator.webdriver on; hiding it with a preload script instead")
+                await self.connection.send("script.addPreloadScript", {"functionDeclaration": HIDE_WEBDRIVER})
         except BaseException:
             await self._cleanup(grace=0)
             raise
@@ -136,6 +152,70 @@ class Browser:
             params["contexts"] = contexts
         result = await self.connection.send("session.subscribe", params)
         return result.get("subscription", "")
+
+    async def intercept(self, handler: InterceptHandler, url: str | None = None, phase: Phase = "request") -> Intercept:
+        """Pause matching requests in every tab and pass them to `handler`.
+
+        The handler settles each one with continue_(), abort() or fulfill(); if it doesn't,
+        the next matching intercept gets it, and if none does the request continues untouched.
+        """
+        return await self._network.intercept(handler, url, phase)
+
+    async def block(self, *urls: str, resource_types: Iterable[str] = ()) -> Intercept:
+        """Abort requests matching any URL pattern or resource type ("image", "font", "media", ...)."""
+        return await self._network.block(urls, resource_types)
+
+    async def set_extra_headers(self, headers: dict[str, str]) -> None:
+        """Add headers to every request; an empty dict removes them."""
+        await self._network.set_extra_headers(headers)
+
+    def top_level(self, context: str) -> str:
+        """The tab a browsing context (e.g. an iframe) belongs to."""
+        while context in self._parents:
+            context = self._parents[context]
+        return context
+
+    async def _clear_automation_flag(self) -> None:
+        try:
+            tree = await self.connection.send("browsingContext.getTree", {"moz:scope": "chrome", "maxDepth": 0})
+            target = {"context": tree["contexts"][0]["context"]}
+            await self.connection.send(
+                "script.evaluate", {"expression": CLEAR_AUTOMATION_FLAG, "target": target, "awaitPromise": False}
+            )
+        except (BidiError, IndexError) as error:
+            log.debug("could not clear the automation flag: %s", error)
+
+    async def _webdriver_hidden(self, tab: Tab) -> bool:
+        for _ in range(10):  # the flag reaches content processes asynchronously
+            if not await tab.evaluate("navigator.webdriver", isolated=True):
+                return True
+            await asyncio.sleep(0.05)
+        return False
+
+    async def _replace_initial_tab(self) -> Tab:
+        # Firefox focuses the address bar of the startup about:blank tab, so documents loaded there never
+        # get focus (document.hasFocus() stays false). Tabs opened over BiDi get content focus.
+        initial = await self.tabs()
+        tab = await self.new_tab()
+        for old in initial:
+            await old.close()
+        return tab
+
+    async def _track_frames(self) -> None:
+        def created(params: dict) -> None:
+            if params.get("parent"):
+                self._parents[params["context"]] = params["parent"]
+
+        def destroyed(params: dict) -> None:
+            self._parents.pop(params["context"], None)
+            for child in params.get("children") or ():
+                destroyed(child)
+
+        self.connection.on("browsingContext.contextCreated", created)
+        self.connection.on("browsingContext.contextDestroyed", destroyed)
+        await self.connection.send(
+            "session.subscribe", {"events": ["browsingContext.contextCreated", "browsingContext.contextDestroyed"]}
+        )
 
     async def _read_ws_url(self) -> str:
         assert self._process and self._process.stderr
