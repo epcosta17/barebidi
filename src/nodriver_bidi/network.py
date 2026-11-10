@@ -176,6 +176,10 @@ class Network:
         self._listeners: list[ResponseHandler] = []
         self._collector: str | None = None
         self._tasks: set[asyncio.Task] = set()
+        # User context -> credentials for contexts with their own proxy; None is the browser-wide proxy.
+        self._proxy_credentials: dict[str | None, tuple[str, str] | None] = {}
+        self._auth_intercept: str | None = None
+        self._auth_attempts: set[str] = set()
 
     async def intercept(
         self, handler: InterceptHandler, url: str | None = None, phase: Phase = "request", contexts: list[str] | None = None
@@ -244,6 +248,43 @@ class Network:
                 raise TimeoutError(f"no response matching {url!r} within {timeout}s") from None
         finally:
             remove()
+
+    async def register_proxy(self, user_context: str | None, credentials: tuple[str, str] | None) -> None:
+        """Remember who has a proxy and answer its 407 challenges; `user_context` None is the browser-wide one."""
+        self._proxy_credentials[user_context] = credentials
+        if credentials is None:
+            return
+        await self._subscribe("network.authRequired", self._on_auth_required)
+        async with self._lock:
+            if self._auth_intercept is None:
+                result = await self.browser.connection.send("network.addIntercept", {"phases": ["authRequired"]})
+                self._auth_intercept = result["intercept"]
+
+    def forget_proxy(self, user_context: str) -> None:
+        self._proxy_credentials.pop(user_context, None)
+
+    async def _on_auth_required(self, params: dict) -> None:
+        if not params.get("isBlocked"):
+            return
+        request = params["request"]["request"]
+        user_context = self.browser.user_context_of(params["context"]) if params.get("context") else "default"
+        # A context with its own proxy must never receive the browser-wide proxy's credentials.
+        credentials = self._proxy_credentials.get(user_context if user_context in self._proxy_credentials else None)
+        if params["response"]["status"] != 407 or credentials is None:
+            action: dict = {"action": "default"}
+        elif request in self._auth_attempts:
+            action = {"action": "cancel"}  # the proxy rejected these credentials; don't retry forever
+        else:
+            self._auth_attempts.add(request)
+            username, password = credentials
+            action = {
+                "action": "provideCredentials",
+                "credentials": {"type": "password", "username": username, "password": password},
+            }
+        try:
+            await self.browser.connection.send("network.continueWithAuth", {"request": request, **action})
+        except (BidiError, ConnectionError) as error:
+            log.debug("could not answer the auth challenge for %s: %s", params["request"]["url"], error)
 
     async def _capture_responses(self) -> None:
         async with self._lock:

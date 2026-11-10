@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import Any
 
 from .connection import BidiError, Connection, Handler
+from .context import Context
 from .network import Intercept, InterceptHandler, Network, Phase
+from .proxy import NO_PROXY_PREFS, Proxy
 from .stealth import CLEAR_AUTOMATION_FLAG, HIDE_WEBDRIVER
 from .stealth import PREFS as STEALTH_PREFS
 from .tab import Tab
@@ -30,6 +32,8 @@ DEFAULT_PREFS: dict[str, Any] = {
     "datareporting.policy.dataSubmissionEnabled": False,
     "toolkit.telemetry.reportingpolicy.firstRun": False,
     "app.update.disabledForTesting": True,
+    # Behind a proxy, WebRTC must not reveal the real IP by reaching STUN servers directly.
+    "media.peerconnection.ice.proxy_only_if_behind_proxy": True,
 }
 
 
@@ -53,11 +57,21 @@ def find_firefox() -> str:
 
 
 class Browser:
+    """Firefox driven over WebDriver BiDi.
+
+    `proxy`, `locale` and `timezone` set up the default context (see Context); `profile` keeps its
+    cookies and storage between runs instead of starting from a temporary profile.
+    """
+
     def __init__(
         self,
         *,
         headless: bool = False,
         stealth: bool = True,
+        profile: str | Path | None = None,
+        proxy: str | None = None,
+        locale: str | None = None,
+        timezone: str | None = None,
         executable_path: str | None = None,
         args: Iterable[str] = (),
         prefs: dict[str, Any] | None = None,
@@ -65,9 +79,18 @@ class Browser:
     ):
         self.headless = headless
         self.stealth = stealth
+        self.profile = Path(profile) if profile else None
+        self.proxy = Proxy.parse(proxy) if proxy else None
+        self.locale = locale
+        self.timezone = timezone
         self.executable_path = executable_path
         self.args = list(args)
-        self.prefs = {**DEFAULT_PREFS, **(STEALTH_PREFS if stealth else {}), **(prefs or {})}
+        self.prefs = {
+            **DEFAULT_PREFS,
+            **(STEALTH_PREFS if stealth else {}),
+            **(self.proxy.prefs() if self.proxy else NO_PROXY_PREFS),
+            **(prefs or {}),
+        }
         self.startup_timeout = startup_timeout
         self.connection: Connection
         self.session_id: str | None = None
@@ -76,7 +99,9 @@ class Browser:
         self._profile: str | None = None
         self._stderr_task: asyncio.Task | None = None
         self._parents: dict[str, str] = {}
+        self._user_contexts: dict[str, str] = {}
         self._network = Network(self)
+        self.context = Context(self, "default")
 
     async def __aenter__(self) -> "Browser":
         return await self.start()
@@ -85,7 +110,11 @@ class Browser:
         await self.stop()
 
     async def start(self) -> "Browser":
-        self._profile = tempfile.mkdtemp(prefix="nodriver-bidi-")
+        if self.profile:
+            self.profile.mkdir(parents=True, exist_ok=True)
+            self._profile = str(self.profile)
+        else:
+            self._profile = tempfile.mkdtemp(prefix="nodriver-bidi-")
         prefs = "".join(f"user_pref({json.dumps(k)}, {json.dumps(v)});\n" for k, v in self.prefs.items())
         Path(self._profile, "user.js").write_text(prefs)
 
@@ -105,6 +134,9 @@ class Browser:
             self.connection = await Connection.connect(f"{url}/session")
             session = await self.connection.send("session.new", {"capabilities": {}})
             await self._track_frames()
+            if self.proxy:
+                await self._network.register_proxy(None, self.proxy.credentials)
+            await self.context._emulate(self.locale, self.timezone)
             if self.stealth:
                 await self._clear_automation_flag()
             tab = await self._replace_initial_tab()
@@ -134,15 +166,29 @@ class Browser:
         return [Tab(self, c["context"]) for c in tree["contexts"]]
 
     async def new_tab(self, url: str | None = None, background: bool = False) -> Tab:
-        result = await self.connection.send("browsingContext.create", {"type": "tab", "background": background})
-        tab = Tab(self, result["context"])
-        if url:
-            await tab.get(url)
-        return tab
+        return await self.context.new_tab(url, background)
 
     async def get(self, url: str, new_tab: bool = False) -> Tab:
-        tab = await self.new_tab() if new_tab else (await self.tabs())[0]
-        return await tab.get(url)
+        return await self.context.get(url, new_tab)
+
+    async def new_context(self, *, proxy: str | None = None, locale: str | None = None, timezone: str | None = None) -> Context:
+        """A new isolated identity, gone when closed or when the browser stops."""
+        parsed = Proxy.parse(proxy) if proxy else None
+        result = await self.connection.send("browser.createUserContext", {"proxy": parsed.bidi()} if parsed else {})
+        context = Context(self, result["userContext"])
+        if parsed:
+            await self._network.register_proxy(context.id, parsed.credentials)
+        await context._emulate(locale, timezone)
+        return context
+
+    async def cookies(self, domain: str | None = None) -> list[dict]:
+        return await self.context.cookies(domain)
+
+    async def set_cookies(self, cookies: Iterable[dict]) -> None:
+        await self.context.set_cookies(cookies)
+
+    async def clear_cookies(self) -> None:
+        await self.context.clear_cookies()
 
     async def on(self, event: str, handler: Handler, contexts: list[str] | None = None) -> str:
         """Subscribe to a BiDi event or module ("network.responseCompleted", "log")."""
@@ -175,6 +221,9 @@ class Browser:
             context = self._parents[context]
         return context
 
+    def user_context_of(self, context: str) -> str:
+        return self._user_contexts.get(context, "default")
+
     async def _clear_automation_flag(self) -> None:
         try:
             tree = await self.connection.send("browsingContext.getTree", {"moz:scope": "chrome", "maxDepth": 0})
@@ -203,11 +252,13 @@ class Browser:
 
     async def _track_frames(self) -> None:
         def created(params: dict) -> None:
+            self._user_contexts[params["context"]] = params.get("userContext", "default")
             if params.get("parent"):
                 self._parents[params["context"]] = params["parent"]
 
         def destroyed(params: dict) -> None:
             self._parents.pop(params["context"], None)
+            self._user_contexts.pop(params["context"], None)
             for child in params.get("children") or ():
                 destroyed(child)
 
@@ -240,7 +291,7 @@ class Browser:
                 await self._process.wait()
         if self._stderr_task:
             self._stderr_task.cancel()
-        if self._profile:
+        if self._profile and self.profile is None:
             shutil.rmtree(self._profile, ignore_errors=True)
         self._process = None
 
