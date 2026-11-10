@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+<head><title>Behavior</title></head>
+<body style="margin: 0">
+  <input id="field" style="margin: 200px 0 0 300px; width: 200px">
+  <div style="height: 3000px"></div>
+  <button id="far" onclick="this.dataset.clicked = 'yes'">Far away</button>
+  <script>
+    window.events = [];
+    for (const type of ["mousemove", "mouseover", "mousedown", "mouseup", "click", "keydown", "keyup", "wheel", "input"]) {
+      addEventListener(type, e => events.push({
+        type, trusted: e.isTrusted, t: e.timeStamp, x: e.clientX, y: e.clientY,
+        key: e.key, shift: e.shiftKey, target: e.target.id || e.target.tagName,
+      }), true);
+    }
+  </script>
+</body>
+</html>

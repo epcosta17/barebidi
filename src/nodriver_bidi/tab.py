@@ -5,6 +5,7 @@ from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from . import human
 from .element import Element
 from .values import deserialize, serialize
 
@@ -126,6 +127,16 @@ class Tab:
                 raise TimeoutError(f"no element with text {text!r} after {timeout}s")
             await asyncio.sleep(0.1)
 
+    async def scroll(self, delta_y: int) -> None:
+        """Scroll with the mouse wheel where the pointer is; in notches with pauses when humanized."""
+        x, y = await self._pointer()
+        actions: list[dict] = []
+        for delta, pause in human.wheel_steps(delta_y) if self.browser.humanize else [(delta_y, 0)]:
+            actions.append({"type": "scroll", "x": x, "y": y, "deltaX": 0, "deltaY": delta, "origin": "viewport"})
+            if pause:
+                actions.append({"type": "pause", "duration": pause})
+        await self._perform({"type": "wheel", "id": "wheel", "actions": actions})
+
     async def screenshot(self, path: str | Path | None = None, full_page: bool = False) -> bytes:
         params = {"context": self.id, "origin": "document" if full_page else "viewport"}
         return _save_png(await self.send("browsingContext.captureScreenshot", params), path)
@@ -185,6 +196,23 @@ class Tab:
             if nodes or loop.time() >= deadline:
                 return [Element(self, n) for n in nodes]
             await asyncio.sleep(0.1)
+
+    async def _pointer(self, viewport: tuple[int, int] | None = None) -> tuple[int, int]:
+        """Where this tab's mouse is; the first time, a random resting place."""
+        if self.id not in self.browser._pointers:
+            width, height = viewport or await self.evaluate("[innerWidth, innerHeight]", isolated=True)
+            self.browser._pointers[self.id] = human.resting_point(width, height)
+        return self.browser._pointers[self.id]
+
+    async def _move_mouse(self, target: tuple[int, int], target_size: float, viewport: tuple[int, int]) -> None:
+        start = await self._pointer(viewport)
+        path = human.mouse_path(start, target, target_size, viewport) if self.browser.humanize else [(*target, 0)]
+        moves = [{"type": "pointerMove", "x": x, "y": y, "duration": ms, "origin": "viewport"} for x, y, ms in path]
+        await self._perform({"type": "pointer", "id": "mouse", "parameters": {"pointerType": "mouse"}, "actions": moves})
+        self.browser._pointers[self.id] = target
+
+    async def _perform(self, source: dict) -> None:
+        await self.send("input.performActions", {"context": self.id, "actions": [source]})
 
     def _target(self, isolated: bool) -> dict:
         return {"context": self.id, "sandbox": SANDBOX} if isolated else {"context": self.id}

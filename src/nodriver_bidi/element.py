@@ -1,5 +1,8 @@
+import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+from . import human
 
 if TYPE_CHECKING:
     from .tab import Tab
@@ -15,6 +18,34 @@ KEYS = {
     "ArrowDown": "",
     "Delete": "",
 }
+
+_RECT = """function () {
+  const r = this.getBoundingClientRect();
+  return [r.top, r.bottom, r.left, r.right, innerWidth, innerHeight];
+}"""
+
+# A point of the element not covered by anything else, around its center but rarely right on it.
+_TARGET = """function () {
+  const r = this.getBoundingClientRect();
+  const spread = () => (Math.random() + Math.random() + Math.random() - 1.5) / 5;
+  let [x, y] = [r.left + r.width / 2, r.top + r.height / 2];
+  for (let i = 0; i < 9; i++) {
+    const [px, py] = [r.left + r.width * (0.5 + spread()), r.top + r.height * (0.5 + spread())];
+    const hit = document.elementFromPoint(px, py);
+    if (hit && (hit === this || this.contains(hit))) { [x, y] = [px, py]; break; }
+  }
+  return [Math.round(x), Math.round(y), r.width, r.height, innerWidth, innerHeight];
+}"""
+
+_UNDER = """function (x, y) {
+  const hit = document.elementFromPoint(x, y);
+  return !!hit && (hit === this || this.contains(hit));
+}"""
+
+_SELECT_CONTENTS = """function () {
+  if (typeof this.select === 'function') this.select();
+  else getSelection().selectAllChildren(this);
+}"""
 
 
 class Element:
@@ -53,39 +84,31 @@ class Element:
         return await self.call("function(n) { return this[n] }", name)
 
     async def scroll_into_view(self) -> None:
+        """Jump to the element (no wheel events); hover() and click() scroll with the wheel instead."""
         await self.call("function() { this.scrollIntoView({block: 'center', inline: 'center'}) }", isolated=True)
 
+    async def hover(self) -> None:
+        await self._move_here()
+
     async def click(self) -> None:
-        await self.scroll_into_view()
-        await self._perform(
-            {
-                "type": "pointer",
-                "id": "mouse",
-                "parameters": {"pointerType": "mouse"},
-                "actions": [
-                    {"type": "pointerMove", "x": 0, "y": 0, "origin": {"type": "element", "element": self.reference}},
-                    {"type": "pointerDown", "button": 0},
-                    {"type": "pointerUp", "button": 0},
-                ],
-            }
-        )
+        await self._move_here(then=human.click_actions(self.tab.browser.humanize))
 
     async def type(self, text: str) -> None:
         await self.click()
-        actions = []
-        for char in text:
-            key = KEYS["Enter"] if char == "\n" else char
-            actions += [{"type": "keyDown", "value": key}, {"type": "keyUp", "value": key}]
-        await self._perform({"type": "key", "id": "keyboard", "actions": actions})
+        await self.tab._perform({"type": "key", "id": "keyboard", "actions": human.key_actions(text, self.tab.browser.humanize)})
 
     async def press(self, key: str) -> None:
         value = KEYS.get(key, key)
-        await self._perform(
-            {"type": "key", "id": "keyboard", "actions": [{"type": "keyDown", "value": value}, {"type": "keyUp", "value": value}]}
+        hold = [{"type": "pause", "duration": human.between(50, 120)}] if self.tab.browser.humanize else []
+        await self.tab._perform(
+            {"type": "key", "id": "keyboard", "actions": [{"type": "keyDown", "value": value}, *hold, {"type": "keyUp", "value": value}]}
         )
 
     async def clear(self) -> None:
-        await self.call("function() { this.value = ''; this.dispatchEvent(new Event('input', {bubbles: true})) }", isolated=True)
+        """Select the content and press Backspace, so the page sees real input events."""
+        await self.click()
+        await self.call(_SELECT_CONTENTS, isolated=True)
+        await self.press("Backspace")
 
     async def select(self, css: str, timeout: float = 10.0) -> "Element":
         return await self.tab._first({"type": "css", "value": css}, timeout, css, start=[self.reference])
@@ -102,5 +125,29 @@ class Element:
         )
         return _save_png(result, path)
 
-    async def _perform(self, source: dict) -> None:
-        await self.tab.send("input.performActions", {"context": self.tab.id, "actions": [source]})
+    async def _move_here(self, then: list[dict] = ()) -> None:
+        await self._bring_into_view()
+        for _ in range(3):  # the page may move the element while the mouse travels: aim again, like a person
+            x, y, width, height, viewport_width, viewport_height = await self.call(_TARGET, isolated=True)
+            await self.tab._move_mouse((x, y), min(width, height), (viewport_width, viewport_height))
+            if await self.call(_UNDER, x, y, isolated=True):
+                break
+        if then:
+            await self.tab._perform({"type": "pointer", "id": "mouse", "parameters": {"pointerType": "mouse"}, "actions": then})
+
+    async def _bring_into_view(self) -> None:
+        if self.tab.browser.humanize:
+            previous = None
+            for _ in range(15):
+                top, bottom, left, right, width, height = await self.call(_RECT, isolated=True)
+                if left < 0 or right > width:
+                    break
+                center = (top + bottom) / 2
+                if 0.1 * height <= center <= 0.9 * height:
+                    return
+                if top == previous:
+                    break  # the wheel moved nothing, e.g. it is over a container that can't scroll further
+                previous = top
+                await self.tab.scroll(round(center - height * human.between(35, 60) / 100))
+                await asyncio.sleep(0.25)  # let smooth scrolling settle
+        await self.scroll_into_view()

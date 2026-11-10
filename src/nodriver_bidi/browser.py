@@ -63,7 +63,9 @@ class Browser:
 
     `proxy`, `locale` and `timezone` set up the default context (see Context); `profile` keeps its
     cookies and storage between runs instead of starting from a temporary profile. `screen` is the
-    size of the virtual screen in headless mode; otherwise the real screen is used.
+    size of the virtual screen in headless mode; otherwise the real screen is used. With `humanize`,
+    the mouse travels in curves, keys are typed at a human rhythm and scrolling uses the wheel;
+    turn it off (here or later through the attribute) for speed.
     """
 
     def __init__(
@@ -72,6 +74,7 @@ class Browser:
         headless: bool = False,
         screen: tuple[int, int] | None = None,
         stealth: bool = True,
+        humanize: bool = True,
         profile: str | Path | None = None,
         proxy: str | None = None,
         locale: str | None = None,
@@ -86,6 +89,7 @@ class Browser:
         self.headless = headless
         self.screen = screen or DEFAULT_HEADLESS_SCREEN
         self.stealth = stealth
+        self.humanize = humanize
         self.profile = Path(profile) if profile else None
         self.proxy = Proxy.parse(proxy) if proxy else None
         self.locale = locale
@@ -107,6 +111,7 @@ class Browser:
         self._stderr_task: asyncio.Task | None = None
         self._parents: dict[str, str] = {}
         self._user_contexts: dict[str, str] = {}
+        self._pointers: dict[str, tuple[int, int]] = {}
         self._network = Network(self)
         self.context = Context(self, "default")
 
