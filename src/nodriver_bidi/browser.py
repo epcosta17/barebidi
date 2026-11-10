@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -7,7 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterable
+from collections.abc import AsyncIterator, Iterable
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,8 @@ _WS_URL = re.compile(rb"WebDriver BiDi listening on (ws://\S+)")
 
 DEFAULT_HEADLESS_SCREEN = (1920, 1080)
 
+ROUTED_MOUSE = "remote.events.async.mouse.enabled"
+
 DEFAULT_PREFS: dict[str, Any] = {
     "browser.shell.checkDefaultBrowser": False,
     "browser.startup.homepage_override.mstone": "ignore",
@@ -36,6 +39,10 @@ DEFAULT_PREFS: dict[str, Any] = {
     "app.update.disabledForTesting": True,
     # Behind a proxy, WebRTC must not reveal the real IP by reaching STUN servers directly.
     "media.peerconnection.ice.proxy_only_if_behind_proxy": True,
+    # Mouse and wheel input enters through the browser window and its hit testing, like real input, instead
+    # of being synthesized inside the page's process: it reaches cross-site iframes, with coherent coordinates.
+    ROUTED_MOUSE: True,
+    "remote.events.async.wheel.enabled": True,
 }
 
 
@@ -243,14 +250,29 @@ class Browser:
         return self._user_contexts.get(context, "default")
 
     async def _clear_automation_flag(self) -> None:
+        await self._chrome_eval(CLEAR_AUTOMATION_FLAG)
+
+    @contextlib.asynccontextmanager
+    async def _input_inside_frames(self) -> AsyncIterator[None]:
+        """Mouse input sent to a frame goes straight into its document instead of through the window."""
+        switch = f"Services.prefs.setBoolPref({json.dumps(ROUTED_MOUSE)}, %s)"
+        switched = bool(self.prefs.get(ROUTED_MOUSE)) and await self._chrome_eval(switch % "false")
+        try:
+            yield
+        finally:
+            if switched:
+                await self._chrome_eval(switch % "true")
+
+    async def _chrome_eval(self, expression: str) -> bool:
+        """Run `expression` in the browser's own scope, which needs the system access stealth mode asks for."""
         try:
             tree = await self.connection.send("browsingContext.getTree", {"moz:scope": "chrome", "maxDepth": 0})
             target = {"context": tree["contexts"][0]["context"]}
-            await self.connection.send(
-                "script.evaluate", {"expression": CLEAR_AUTOMATION_FLAG, "target": target, "awaitPromise": False}
-            )
+            result = await self.connection.send("script.evaluate", {"expression": expression, "target": target, "awaitPromise": False})
         except (BidiError, IndexError) as error:
-            log.debug("could not clear the automation flag: %s", error)
+            log.debug("cannot run in the browser's scope: %s", error)
+            return False
+        return result.get("type") != "exception"
 
     async def _webdriver_hidden(self, tab: Tab) -> bool:
         for _ in range(10):  # the flag reaches content processes asynchronously

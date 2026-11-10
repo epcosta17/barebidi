@@ -2,8 +2,9 @@ from .browser import Browser, find_firefox, start
 from .connection import BidiError, Connection
 from .context import Context
 from .element import Element
+from .frame import Frame, JavaScriptError
 from .network import ExpectedResponse, Intercept, InterceptedRequest, Request, Response
-from .tab import JavaScriptError, Tab
+from .tab import Tab
 
 __all__ = [
     "BidiError",
@@ -12,6 +13,7 @@ __all__ = [
     "Context",
     "Element",
     "ExpectedResponse",
+    "Frame",
     "Intercept",
     "InterceptedRequest",
     "JavaScriptError",

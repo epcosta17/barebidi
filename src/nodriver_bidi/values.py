@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .tab import Tab
+    from .frame import Frame
 
 _SPECIAL_NUMBERS = {"NaN": math.nan, "-0": -0.0, "Infinity": math.inf, "-Infinity": -math.inf}
 
@@ -40,7 +40,7 @@ def serialize(value: Any) -> dict:
     raise TypeError(f"cannot send {type(value).__name__} to the browser")
 
 
-def deserialize(remote: dict, tab: "Tab | None" = None) -> Any:
+def deserialize(remote: dict, frame: "Frame | None" = None) -> Any:
     kind = remote["type"]
     value = remote.get("value")
     match kind:
@@ -53,18 +53,20 @@ def deserialize(remote: dict, tab: "Tab | None" = None) -> Any:
         case "bigint":
             return int(value)
         case "array" | "set" | "nodelist" | "htmlcollection":
-            return [deserialize(v, tab) for v in value or []]
+            return [deserialize(v, frame) for v in value or []]
         case "object" | "map":
             return {
-                k if isinstance(k, str) else _hashable(deserialize(k, tab)): deserialize(v, tab)
+                k if isinstance(k, str) else _hashable(deserialize(k, frame)): deserialize(v, frame)
                 for k, v in value or []
             }
         case "date":
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
-        case "node" if tab is not None:
+        case "node" if frame is not None:
             from .element import Element
 
-            return Element(tab, remote)
+            return Element(frame, remote)
+        case "window" if frame is not None:
+            return frame._frame_for(value["context"])
         case _:
             return remote
 

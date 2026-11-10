@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"><title>frames</title>
+  <style>
+    /* nowsecure.nl's idle animation */
+    @keyframes idle {
+      0%, 100% { transform: rotateX(5deg) rotateY(-5deg) rotateZ(5deg) }
+      50% { transform: rotateX(-5deg) rotateY(5deg) rotateZ(5deg) }
+    }
+  </style>
+</head>
+<body style="margin:0; height:2400px">
+  <!-- Every iframe loads from localhost while this page is on 127.0.0.1: cross-site, so out of process. -->
+  <iframe id="plain" style="position:absolute; left:80px; top:1400px; width:320px; height:120px; border:10px solid #999; padding:8px"></iframe>
+  <div id="host" style="position:absolute; left:480px; top:60px"></div>
+  <div style="position:absolute; left:80px; top:260px; perspective:800px">
+    <div style="width:320px; height:120px; transform-style:preserve-3d; animation:idle 6s infinite">
+      <div style="position:absolute; inset:0; transform:translateZ(60px)">
+        <iframe id="cube" style="display:block; width:320px; height:120px; border:0"></iframe>
+      </div>
+      <div style="position:absolute; inset:0; transform:rotateY(180deg) translateZ(60px)"></div>
+    </div>
+  </div>
+  <script>
+    const inner = location.href.replace('127.0.0.1', 'localhost').replace(/[^/]*$/, 'frame_inner.html');
+    for (const id of ['plain', 'cube']) document.getElementById(id).src = inner + '#' + id;
+    const root = document.getElementById('host').attachShadow({mode: 'closed'});
+    root.innerHTML = '<iframe style="display:block; width:320px; height:120px; border:0"></iframe>';
+    root.querySelector('iframe').src = inner + '#shadow';
+    window.events = [];
+    for (const type of ['mousemove', 'mouseover'])
+      addEventListener(type, event => events.push([type, event.target.id || event.target.localName]), true);
+  </script>
+</body>
+</html>
