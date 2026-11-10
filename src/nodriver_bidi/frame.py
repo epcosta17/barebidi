@@ -3,7 +3,7 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
 from . import human
-from .element import Element
+from .element import Element, ElementQuery
 from .network import url_matcher
 from .values import deserialize, serialize
 
@@ -110,8 +110,10 @@ class Frame:
     async def title(self) -> str:
         return await self.evaluate("document.title", isolated=True)
 
-    async def select(self, css: str, timeout: float = 10.0) -> Element:
-        return await self._first({"type": "css", "value": css}, timeout, css)
+    def select(self, css: str, timeout: float = 10.0) -> ElementQuery:
+        """The first element matching `css`, waiting up to `timeout` seconds for it to appear. Await it for the
+        Element, or chain an action: `await tab.select("#email").type("ana@example.com")`."""
+        return ElementQuery(lambda: self._first({"type": "css", "value": css}, timeout, css), css)
 
     async def select_all(self, css: str, timeout: float = 10.0) -> list[Element]:
         return await self._wait_for({"type": "css", "value": css}, timeout)
@@ -119,8 +121,12 @@ class Frame:
     async def xpath(self, expression: str, timeout: float = 10.0) -> list[Element]:
         return await self._wait_for({"type": "xpath", "value": expression}, timeout)
 
-    async def find(self, text: str, exact: bool = False, timeout: float = 10.0) -> Element:
-        """Element whose own text contains `text` (case-insensitive), or equals it when `exact`."""
+    def find(self, text: str, exact: bool = False, timeout: float = 10.0) -> ElementQuery:
+        """The first element whose own text contains `text` (case-insensitive), or equals it when `exact`;
+        waits up to `timeout` seconds. Await it, or chain an action: `await tab.find("Aceptar").click()`."""
+        return ElementQuery(lambda: self._find(text, exact, timeout), repr(text))
+
+    async def _find(self, text: str, exact: bool, timeout: float) -> Element:
         # BiDi's innerText locator isn't implemented in Firefox yet, so search in the page.
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout

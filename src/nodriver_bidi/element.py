@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable, Generator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -158,8 +159,9 @@ class Element:
         await self.call(_SELECT_CONTENTS, isolated=True)
         await self.press("Backspace")
 
-    async def select(self, css: str, timeout: float = 10.0) -> "Element":
-        return await self.frame._first({"type": "css", "value": css}, timeout, css, start=[self.reference])
+    def select(self, css: str, timeout: float = 10.0) -> "ElementQuery":
+        """The first element inside this one matching `css` (see Frame.select)."""
+        return ElementQuery(lambda: self.frame._first({"type": "css", "value": css}, timeout, css, start=[self.reference]), css)
 
     async def select_all(self, css: str, timeout: float = 10.0) -> list["Element"]:
         return await self.frame._wait_for({"type": "css", "value": css}, timeout, start=[self.reference])
@@ -235,6 +237,83 @@ class Element:
                 await self.tab.scroll(round(center - height * human.between(35, 60) / 100))
                 await asyncio.sleep(0.25)  # let smooth scrolling settle
         await self.scroll_into_view()
+
+
+class ElementQuery:
+    """An element still to be found: await it for the Element, or act on it right away, which finds it first.
+
+        button = await tab.select("#send")    # the Element
+        await tab.find("Aceptar").click()     # found, then clicked with the humanized mouse
+
+    Each await or action looks it up anew, so it never acts on an element the page has since replaced.
+    """
+
+    def __init__(self, lookup: Callable[[], Awaitable[Element]], label: str):
+        self._lookup = lookup
+        self._label = label
+
+    def __repr__(self) -> str:
+        return f"<ElementQuery {self._label}>"
+
+    def __await__(self) -> Generator[Any, None, Element]:
+        return self._lookup().__await__()
+
+    def select(self, css: str, timeout: float = 10.0) -> "ElementQuery":
+        async def lookup() -> Element:
+            return await (await self).select(css, timeout)
+
+        return ElementQuery(lookup, f"{self._label} {css}")
+
+    async def select_all(self, css: str, timeout: float = 10.0) -> list[Element]:
+        return await (await self).select_all(css, timeout)
+
+    async def click(self) -> None:
+        await (await self).click()
+
+    async def hover(self) -> None:
+        await (await self).hover()
+
+    async def type(self, text: str) -> None:
+        await (await self).type(text)
+
+    async def press(self, key: str) -> None:
+        await (await self).press(key)
+
+    async def clear(self) -> None:
+        await (await self).clear()
+
+    async def set_files(self, *paths: str | Path) -> None:
+        await (await self).set_files(*paths)
+
+    async def scroll_into_view(self) -> None:
+        await (await self).scroll_into_view()
+
+    async def text(self) -> str:
+        return await (await self).text()
+
+    async def inner_text(self) -> str:
+        return await (await self).inner_text()
+
+    async def html(self) -> str:
+        return await (await self).html()
+
+    async def get_attribute(self, name: str) -> str | None:
+        return await (await self).get_attribute(name)
+
+    async def get_property(self, name: str) -> Any:
+        return await (await self).get_property(name)
+
+    async def call(self, function: str, *args: Any, isolated: bool = False) -> Any:
+        return await (await self).call(function, *args, isolated=isolated)
+
+    async def shadow_root(self) -> Element | None:
+        return await (await self).shadow_root()
+
+    async def content_frame(self) -> "Frame":
+        return await (await self).content_frame()
+
+    async def screenshot(self, path: str | Path | None = None) -> bytes:
+        return await (await self).screenshot(path)
 
 
 def _clamp(value: float, size: float) -> int:
