@@ -127,3 +127,35 @@ def test_proxy_validation():
     assert socks.prefs["network.proxy.socks_version"] == 5
     assert socks.prefs["network.proxy.socks5_remote_dns"] is True
     assert nb.Browser().prefs["network.proxy.type"] == 5
+
+
+GEOMETRY = """() => ({screen: [screen.width, screen.height],
+  avail: [screen.availLeft, screen.availTop, screen.availWidth, screen.availHeight],
+  outer: [screenX, screenY, outerWidth, outerHeight], inner: [innerWidth, innerHeight]})"""
+
+
+def assert_window_fits(geometry):
+    left, top, avail_width, avail_height = geometry["avail"]
+    x, y, width, height = geometry["outer"]
+    assert left <= x and top <= y and x + width <= left + avail_width and y + height <= top + avail_height
+    assert geometry["inner"][0] == width and 0 < geometry["inner"][1] < height
+
+
+async def test_headless_window_fits_the_screen(browser):
+    tab = await browser.get("data:text/html,<body>x</body>")
+    geometry = await tab.call_function(GEOMETRY)
+    assert geometry["screen"] == [1920, 1080]
+    assert_window_fits(geometry)
+    assert geometry["outer"][2:] == geometry["avail"][2:]
+
+
+async def test_custom_screen():
+    async with nb.Browser(headless=True, screen=(1366, 768)) as browser:
+        geometry = await (await browser.get("data:text/html,<body>x</body>")).call_function(GEOMETRY)
+    assert geometry["screen"] == [1366, 768]
+    assert_window_fits(geometry)
+
+
+def test_screen_needs_headless():
+    with pytest.raises(ValueError):
+        nb.Browser(screen=(1920, 1080))

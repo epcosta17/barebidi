@@ -23,6 +23,8 @@ log = logging.getLogger(__name__)
 
 _WS_URL = re.compile(rb"WebDriver BiDi listening on (ws://\S+)")
 
+DEFAULT_HEADLESS_SCREEN = (1920, 1080)
+
 DEFAULT_PREFS: dict[str, Any] = {
     "browser.shell.checkDefaultBrowser": False,
     "browser.startup.homepage_override.mstone": "ignore",
@@ -60,13 +62,15 @@ class Browser:
     """Firefox driven over WebDriver BiDi.
 
     `proxy`, `locale` and `timezone` set up the default context (see Context); `profile` keeps its
-    cookies and storage between runs instead of starting from a temporary profile.
+    cookies and storage between runs instead of starting from a temporary profile. `screen` is the
+    size of the virtual screen in headless mode; otherwise the real screen is used.
     """
 
     def __init__(
         self,
         *,
         headless: bool = False,
+        screen: tuple[int, int] | None = None,
         stealth: bool = True,
         profile: str | Path | None = None,
         proxy: str | None = None,
@@ -77,7 +81,10 @@ class Browser:
         prefs: dict[str, Any] | None = None,
         startup_timeout: float = 30.0,
     ):
+        if screen and not headless:
+            raise ValueError("the screen size can only be chosen in headless mode; otherwise it is the real one")
         self.headless = headless
+        self.screen = screen or DEFAULT_HEADLESS_SCREEN
         self.stealth = stealth
         self.profile = Path(profile) if profile else None
         self.proxy = Proxy.parse(proxy) if proxy else None
@@ -124,9 +131,13 @@ class Browser:
         if self.stealth:
             cmd.append("--remote-allow-system-access")
         cmd += [*self.args, "about:blank"]
+        env = None
+        if self.headless:
+            width, height = self.screen
+            env = {**os.environ, "MOZ_HEADLESS_WIDTH": str(width), "MOZ_HEADLESS_HEIGHT": str(height)}
         log.debug("launching %s", cmd)
         self._process = await asyncio.create_subprocess_exec(
-            *cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+            *cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=env
         )
         try:
             url = await asyncio.wait_for(self._read_ws_url(), self.startup_timeout)
@@ -140,6 +151,8 @@ class Browser:
             if self.stealth:
                 await self._clear_automation_flag()
             tab = await self._replace_initial_tab()
+            if self.headless:
+                await self._fit_window(tab)
             if self.stealth and not await self._webdriver_hidden(tab):
                 log.info("this Firefox keeps navigator.webdriver on; hiding it with a preload script instead")
                 await self.connection.send("script.addPreloadScript", {"functionDeclaration": HIDE_WEBDRIVER})
@@ -240,6 +253,18 @@ class Browser:
                 return True
             await asyncio.sleep(0.05)
         return False
+
+    async def _fit_window(self, tab: Tab) -> None:
+        # Headless Firefox spreads its window over the whole screen, menu bar and dock included, which no
+        # real window does. Place it over the available area instead, like a maximized window.
+        x, y, width, height = await tab.evaluate(
+            "[screen.availLeft, screen.availTop, screen.availWidth, screen.availHeight]", isolated=True
+        )
+        window = (await self.connection.send("browser.getClientWindows"))["clientWindows"][0]["clientWindow"]
+        await self.connection.send(
+            "browser.setClientWindowState",
+            {"clientWindow": window, "state": "normal", "x": x, "y": y, "width": width, "height": height},
+        )
 
     async def _replace_initial_tab(self) -> Tab:
         # Firefox focuses the address bar of the startup about:blank tab, so documents loaded there never
