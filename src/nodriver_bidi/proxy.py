@@ -2,7 +2,11 @@ import asyncio
 import base64
 import contextlib
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from urllib.parse import unquote, urlsplit
+
+if TYPE_CHECKING:
+    from . import protocol
 
 _SOCKS_VERSIONS = {"socks": 5, "socks5": 5, "socks5h": 5, "socks4": 4, "socks4a": 4}
 
@@ -32,7 +36,7 @@ class Proxy:
     def address(self) -> str:
         return f"[{self.host}]:{self.port}" if ":" in self.host else f"{self.host}:{self.port}"
 
-    def bidi(self) -> dict:
+    def bidi(self) -> "protocol.session_ProxyConfiguration":
         """WebDriver BiDi proxy configuration, for a single context."""
         if self.socks_version:
             return {"proxyType": "manual", "socksProxy": self.address, "socksVersion": self.socks_version}

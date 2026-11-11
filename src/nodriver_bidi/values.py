@@ -5,12 +5,13 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from . import protocol
     from .frame import Frame
 
 _SPECIAL_NUMBERS = {"NaN": math.nan, "-0": -0.0, "Infinity": math.inf, "-Infinity": -math.inf}
 
 
-def serialize(value: Any) -> dict:
+def serialize(value: Any) -> "protocol.script_LocalValue":
     from .element import Element
 
     if isinstance(value, Element):

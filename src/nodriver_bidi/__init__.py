@@ -1,3 +1,4 @@
+from . import protocol
 from .browser import Browser, find_firefox, start
 from .connection import BidiError, BrowserClosedError, Connection
 from .context import Context
@@ -27,5 +28,6 @@ __all__ = [
     "Response",
     "Tab",
     "find_firefox",
+    "protocol",
     "start",
 ]
