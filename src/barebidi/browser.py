@@ -171,7 +171,7 @@ class Browser:
             self.profile.mkdir(parents=True, exist_ok=True)
             self._profile = str(self.profile)
         else:
-            self._profile = tempfile.mkdtemp(prefix="nodriver-bidi-", dir=self._scratch)
+            self._profile = tempfile.mkdtemp(prefix="barebidi-", dir=self._scratch)
         if self.proxy and self.proxy.credentials:
             self.prefs |= (await self._relay(self.proxy)).local.prefs()
         prefs = "".join(f"user_pref({json.dumps(k)}, {json.dumps(v)});\n" for k, v in self.prefs.items())
@@ -383,7 +383,7 @@ class Browser:
             self.downloads.mkdir(parents=True, exist_ok=True)
             self._downloads_dir = str(self.downloads.resolve())
         else:
-            self._downloads_dir = tempfile.mkdtemp(prefix="nodriver-bidi-downloads-", dir=self._scratch)
+            self._downloads_dir = tempfile.mkdtemp(prefix="barebidi-downloads-", dir=self._scratch)
         behavior = {"type": "allowed", "destinationFolder": self._downloads_dir}
         await self.connection.send("browser.setDownloadBehavior", {"downloadBehavior": behavior})
 

@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-import nodriver_bidi as nb
+import barebidi as nb
 
 IMAGE_WIDTH = """new Promise(resolve => {
   const img = document.getElementById('pixel');

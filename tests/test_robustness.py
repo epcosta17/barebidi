@@ -5,8 +5,8 @@ import time
 
 import pytest
 
-import nodriver_bidi as nb
-from nodriver_bidi.browser import _is_snap
+import barebidi as nb
+from barebidi.browser import _is_snap
 
 NEVER = "new Promise(() => {})"
 

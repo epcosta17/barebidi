@@ -2,14 +2,14 @@ import logging
 
 import pytest
 
-import nodriver_bidi as nb
+import barebidi as nb
 
 FALLBACK = "inside the frame"
 
 
 @pytest.fixture
 async def page(browser, server, caplog):
-    caplog.set_level(logging.INFO, logger="nodriver_bidi")
+    caplog.set_level(logging.INFO, logger="barebidi")
     return await browser.get(f"{server}/frames.html")
 
 

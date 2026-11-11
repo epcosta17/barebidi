@@ -10,7 +10,7 @@ The vendored CDDL (webdriver-bidi.cddl beside this file) is pinned to a webref c
 
 then regenerate the types:
 
-    python tools/bidi_codegen.py > ../src/nodriver_bidi/protocol.py
+    python tools/bidi_codegen.py > ../src/barebidi/protocol.py
 """
 
 import json

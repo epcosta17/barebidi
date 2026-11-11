@@ -1,7 +1,7 @@
 import pytest
 
-import nodriver_bidi as nb
-import nodriver_bidi.browser as browser_module
+import barebidi as nb
+import barebidi.browser as browser_module
 
 NATIVE_GETTER = "function webdriver() {\n    [native code]\n}"
 NATIVE_TO_STRING = "function toString() {\n    [native code]\n}"

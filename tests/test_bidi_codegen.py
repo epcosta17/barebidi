@@ -74,18 +74,18 @@ def test_recursive_types_use_lazy_type_aliases():
 
 
 def test_the_generated_module_is_up_to_date_with_the_vendored_cddl():
-    # If this fails, regenerate: python tools/bidi_codegen.py > src/nodriver_bidi/protocol.py
+    # If this fails, regenerate: python tools/bidi_codegen.py > src/barebidi/protocol.py
     from bidi_codegen import VENDORED
 
     generated = generate(VENDORED.read_text())
-    committed = (Path(__file__).parent.parent / "src" / "nodriver_bidi" / "protocol.py").read_text()
+    committed = (Path(__file__).parent.parent / "src" / "barebidi" / "protocol.py").read_text()
     assert generated == committed
 
 
 def test_generated_types_match_the_spec():
     # Annotations are strings (from __future__ import annotations), which is what type checkers read;
     # pyright honours the NotRequired wrappers even though TypedDict's runtime metadata can't.
-    from nodriver_bidi import protocol
+    from barebidi import protocol
 
     def annotations(td):  # strings, whether Python stored them as str or ForwardRef
         return {key: getattr(value, "__forward_arg__", value) for key, value in td.__annotations__.items()}

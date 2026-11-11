@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-import nodriver_bidi as nb
+import barebidi as nb
 
 
 async def test_session_started(browser):

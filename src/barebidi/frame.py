@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from .tab import Tab
 
 # Realm for the library's own scripts: pages can neither see them nor tamper with the DOM APIs they use.
-SANDBOX = "nodriver-bidi"
+SANDBOX = "barebidi"
 
 _FIND_TEXT = """(text, exact) => {
   const want = exact ? text : text.toLowerCase();

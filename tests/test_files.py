@@ -1,6 +1,6 @@
 import pytest
 
-import nodriver_bidi as nb
+import barebidi as nb
 
 CSV = "a,b\n1,2\n"
 

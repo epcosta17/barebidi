@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-import nodriver_bidi as nb
+import barebidi as nb
 from conftest import LOCAL_PROXY_PREFS
 
 ECHO = "() => fetch('/echo').then(r => r.json())"

@@ -1,6 +1,6 @@
 import inspect
 
-import nodriver_bidi as nb
+import barebidi as nb
 
 SWAP = """(() => {
   const button = document.createElement('button');

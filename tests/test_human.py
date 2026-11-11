@@ -4,8 +4,8 @@ import statistics
 
 import pytest
 
-import nodriver_bidi as nb
-from nodriver_bidi import human
+import barebidi as nb
+from barebidi import human
 
 RECT = "function () { const r = this.getBoundingClientRect(); return [r.left, r.top, r.width, r.height] }"
 

@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-import nodriver_bidi as nb
+import barebidi as nb
 
 PAGES = Path(__file__).parent / "pages"
 HOP_BY_HOP = {"connection", "proxy-connection", "proxy-authorization", "keep-alive", "transfer-encoding", "te", "upgrade"}
