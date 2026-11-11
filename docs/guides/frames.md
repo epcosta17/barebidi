@@ -5,11 +5,13 @@
 Each iframe is a `Frame`, with the same lookup and JavaScript methods as a tab:
 
 ```python
-frame = await tab.frame("widget.example.org")        # first iframe whose URL contains this; waits for it
+# the first iframe whose URL contains this; waits for it
+frame = await tab.frame("widget.example.org")
 await frame.select("button").click()
 print(await frame.evaluate("document.title"))
 
-for f in await tab.frames():                          # every iframe, nested ones included
+# every iframe, nested ones included
+for f in await tab.frames():
     print(await f.url())
 ```
 

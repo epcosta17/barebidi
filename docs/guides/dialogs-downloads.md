@@ -10,13 +10,15 @@ To answer them yourself:
 
 ```python
 async def answer(dialog):
-    print(dialog.type, dialog.message)       # "alert", "confirm", "prompt" or "beforeunload"
+    # dialog.type: "alert", "confirm", "prompt" or "beforeunload"
+    print(dialog.type, dialog.message)
     if dialog.type == "prompt":
         await dialog.accept("Ana")
     else:
         await dialog.dismiss()
 
-stop = await tab.on_dialog(answer)       # this tab; browser.on_dialog() for every tab
+# this tab only; browser.on_dialog() for every tab
+stop = await tab.on_dialog(answer)
 ...
 stop()
 ```
@@ -35,7 +37,7 @@ await tab.select("input[type=file][multiple]").set_files("a.jpg", "b.jpg")
 ```python
 async with tab.expect_download() as expected:
     await tab.find("Export CSV").click()
-path = await expected.download.path()      # waits until the file is complete
+path = await expected.download.path()   # waits for the whole file
 print(path.read_text())
 ```
 

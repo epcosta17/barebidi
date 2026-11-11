@@ -34,9 +34,11 @@ holding Shift for capitals and symbols like a keyboard would. `press()` takes on
 ## Scrolling
 
 ```python
-await tab.scroll(800)      # down 800 px with the mouse wheel, where the pointer is
-await tab.scroll(-400)     # up
-await element.scroll_into_view()   # jump straight to an element, without wheel events
+await tab.scroll(800)    # down 800 px with the wheel, where the pointer is
+await tab.scroll(-400)   # up
+
+# jump straight to an element, without wheel events
+await element.scroll_into_view()
 ```
 
 ## Turning it off

@@ -60,7 +60,7 @@ All are keyword arguments of `Browser(...)` and `start(...)`:
 ## Tabs
 
 ```python
-tab = await browser.get("https://example.com")                 # the current tab
+tab = await browser.get("https://example.com")       # the current tab
 other = await browser.get("https://example.org", new_tab=True)
 background = await browser.new_tab("https://example.net", background=True)
 

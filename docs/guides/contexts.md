@@ -14,7 +14,11 @@ Match the browser to where the proxy exits: a US exit IP with a European time zo
 to spot.
 
 ```python
-browser = await bb.start(proxy="http://user:pass@us.example.com:8080", locale="en-US", timezone="America/Chicago")
+browser = await bb.start(
+    proxy="http://user:pass@us.example.com:8080",
+    locale="en-US",
+    timezone="America/Chicago",
+)
 ```
 
 ## Contexts: several identities in one browser
@@ -23,8 +27,16 @@ A context is like a separate browser profile inside the same Firefox: its own co
 proxy, language and time zone.
 
 ```python
-us = await browser.new_context(proxy="http://user:pass@us-proxy:8080", locale="en-US", timezone="America/Chicago")
-de = await browser.new_context(proxy="http://user:pass@de-proxy:8080", locale="de-DE", timezone="Europe/Berlin")
+us = await browser.new_context(
+    proxy="http://user:pass@us-proxy:8080",
+    locale="en-US",
+    timezone="America/Chicago",
+)
+de = await browser.new_context(
+    proxy="http://user:pass@de-proxy:8080",
+    locale="de-DE",
+    timezone="Europe/Berlin",
+)
 
 tab_us = await us.get("https://example.com")
 tab_de = await de.get("https://example.com")
@@ -51,8 +63,9 @@ so they can be saved as JSON and loaded back later:
 ```python
 import json, pathlib
 
-pathlib.Path("cookies.json").write_text(json.dumps(await browser.cookies()))
-await browser.set_cookies(json.loads(pathlib.Path("cookies.json").read_text()))
+saved = pathlib.Path("cookies.json")
+saved.write_text(json.dumps(await browser.cookies()))
+await browser.set_cookies(json.loads(saved.read_text()))
 ```
 
 ## Keeping a profile

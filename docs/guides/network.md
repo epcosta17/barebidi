@@ -38,7 +38,9 @@ async def handler(request):
     if request.resource_type == "image":
         await request.abort()
     elif "/api/config" in request.url:
-        await request.fulfill('{"beta": true}', headers={"content-type": "application/json"})
+        await request.fulfill(
+            '{"beta": true}', headers={"content-type": "application/json"}
+        )
     else:
         await request.continue_(headers={**request.headers, "x-debug": "1"})
 

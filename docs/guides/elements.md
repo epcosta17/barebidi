@@ -3,10 +3,10 @@
 ## Three ways to look
 
 ```python
-button = await tab.select("form button[type=submit]")    # CSS
-link = await tab.find("Learn more")                       # by visible text
-rows = await tab.xpath("//table//tr[td]")                  # XPath, always a list
-items = await tab.select_all(".item")                      # CSS, a list
+button = await tab.select("form button[type=submit]")  # CSS
+link = await tab.find("Learn more")                    # by text
+rows = await tab.xpath("//table//tr[td]")              # XPath, a list
+items = await tab.select_all(".item")                  # CSS, a list
 ```
 
 All of them **wait** until something matches, 10 seconds by default; `timeout=` changes it. If nothing shows

@@ -5,7 +5,10 @@ barebidi wraps the common tasks; everything else in WebDriver BiDi is one call a
 ## Sending commands
 
 ```python
-result = await tab.send("browsingContext.captureScreenshot", {"context": tab.id, "origin": "document"})
+result = await tab.send(
+    "browsingContext.captureScreenshot",
+    {"context": tab.id, "origin": "document"},
+)
 tree = await browser.connection.send("browsingContext.getTree", {})
 ```
 
@@ -19,8 +22,12 @@ error from the browser raises `BidiError`; a browser that closed or crashed rais
 def logged(params):
     print(params["level"], params["text"])
 
-await tab.on("log.entryAdded", logged)           # this tab's console messages
-await browser.on("network.beforeRequestSent", lambda p: print(p["request"]["url"]))
+await tab.on("log.entryAdded", logged)   # this tab's console messages
+
+def requested(params):
+    print(params["request"]["url"])
+
+await browser.on("network.beforeRequestSent", requested)
 ```
 
 `on()` subscribes to an event, or to a whole module (`"log"`), and calls the handler with each event's
