@@ -1,7 +1,10 @@
 [project]
 name = "barebidi"
 version = "0.1.0"
-description = "Browser automation for Python speaking WebDriver BiDi directly, no driver binaries."
+description = "Async Firefox automation for Python, speaking WebDriver BiDi directly, no driver binaries."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = ["websockets>=13"]
 
