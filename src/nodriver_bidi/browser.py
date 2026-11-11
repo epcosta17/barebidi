@@ -111,6 +111,7 @@ class Browser:
         executable_path: str | None = None,
         args: Iterable[str] = (),
         prefs: dict[str, Any] | None = None,
+        env: dict[str, str] | None = None,
         downloads: str | Path | None = None,
         timeout: float | None = 60.0,
         startup_timeout: float = 30.0,
@@ -128,6 +129,7 @@ class Browser:
         self.timezone = timezone
         self.executable_path = executable_path
         self.args = list(args)
+        self.env = dict(env or {})  # extra environment for the browser process (e.g. a patched build's config)
         self.prefs = {
             **DEFAULT_PREFS,
             **(STEALTH_PREFS if stealth else {}),
@@ -187,6 +189,7 @@ class Browser:
         if self.headless:
             width, height = self.screen
             env |= {"MOZ_HEADLESS_WIDTH": str(width), "MOZ_HEADLESS_HEIGHT": str(height)}
+        env |= self.env  # caller's env wins, so it can override our defaults
         try:
             url = await self._launch(cmd, env)
             self._stderr_task = asyncio.create_task(self._drain_stderr())

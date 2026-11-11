@@ -170,3 +170,10 @@ async def test_custom_screen():
 def test_screen_needs_headless():
     with pytest.raises(ValueError):
         nb.Browser(screen=(1920, 1080))
+
+
+async def test_env_reaches_the_browser_process(server):
+    # env vars let callers configure the binary itself, e.g. a patched Firefox read through its own env.
+    async with nb.Browser(headless=True, env={"TZ": "Asia/Tokyo"}) as browser:
+        tab = await browser.get(f"{server}/index.html")
+        assert await tab.evaluate("Intl.DateTimeFormat().resolvedOptions().timeZone") == "Asia/Tokyo"
