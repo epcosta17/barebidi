@@ -62,5 +62,7 @@ Firefox and Camoufox, and barebidi's own features (closed shadow roots, input ro
 human input).
 
 **You give up**: Playwright's mature API (actionability checks, sync API, tracing), and the path Camoufox is
-built and tested on. Some Camoufox options may be implemented on the Playwright side and not apply over
-BiDi, such as its own humanized cursor.
+built and tested on. Some Camoufox options live in Juggler, Playwright's protocol, and don't apply over BiDi.
+Its humanized cursor is one of them: with barebidi, the mouse moves the way barebidi moves it. For the same
+recorded-movement approach Camoufox uses, install `barebidi[cursory]` (see
+[Mouse and keyboard](input.md#recorded-movements)).

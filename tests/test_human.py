@@ -20,7 +20,32 @@ def straightness_gap(path, start, end):
     return max(abs((x1 - x0) * (y0 - y) - (x0 - x) * (y1 - y0)) / math.dist(start, end) for x, y, _ in path)
 
 
-def test_mouse_paths_curve_and_ease_in_and_out():
+@pytest.fixture
+def without_cursory(monkeypatch):
+    monkeypatch.setattr(human, "_recorded", None)
+
+
+def test_mouse_paths_replay_cursory_recordings(monkeypatch):
+    def recording(start, end):
+        assert (start, end) == ((100, 100), (300, 200))
+        points = [(100, 100), (130.4, 111.6), (130.2, 111.7), (220.9, 160.2), (299.6, 200.3)]
+        return points, [0, 16, 33, 49, 66]
+
+    monkeypatch.setattr(human, "_recorded", recording)
+    # the start is where the pointer already is; times become gaps; a point that rounds to the last one
+    # adds its time to the next; the last point lands exactly on the target
+    assert human.mouse_path((100, 100), (300, 200), 40, (1920, 1080)) == [(130, 112, 16), (221, 160, 33), (300, 200, 17)]
+
+
+def test_mouse_paths_with_cursory_installed_end_on_target():
+    pytest.importorskip("cursory")
+    for _ in range(50):
+        path = human.mouse_path((100, 600), (900, 200), 40, (1920, 1080))
+        assert path[-1][:2] == (900, 200)
+        assert all(ms >= 0 for *_, ms in path) and 150 < sum(ms for *_, ms in path) < 3000
+
+
+def test_mouse_paths_curve_and_ease_in_and_out(without_cursory):
     start, end = (100, 600), (900, 200)
     curved, edge_speeds, middle_speeds = 0, [], []
     for _ in range(200):
@@ -37,7 +62,12 @@ def test_mouse_paths_curve_and_ease_in_and_out():
     assert statistics.mean(middle_speeds) > 1.5 * statistics.mean(edge_speeds)
 
 
-def test_mouse_paths_stay_in_the_viewport():
+@pytest.mark.parametrize("cursory", ["installed", "missing"])
+def test_mouse_paths_stay_in_the_viewport(cursory, monkeypatch):
+    if cursory == "installed":
+        pytest.importorskip("cursory")
+    else:
+        monkeypatch.setattr(human, "_recorded", None)
     for _ in range(100):
         for x, y, _ in human.mouse_path((5, 5), (60, 700), 20, (800, 720)):
             assert 0 <= x < 800 and 0 <= y < 720

@@ -2,6 +2,14 @@
 
 import math
 import random
+from collections.abc import Callable
+
+try:  # optional, LGPL: movements recorded from real people (pip install barebidi[cursory])
+    from cursory import generate_trajectory as _recorded_trajectory
+except ImportError:
+    _recorded_trajectory = None
+
+_recorded: Callable[..., tuple[list, list]] | None = _recorded_trajectory
 
 _random = random.Random()
 
@@ -23,9 +31,31 @@ def mouse_path(
 ) -> list[tuple[int, int, int]]:
     """Points (x, y, milliseconds since the previous one) of a hand moving the mouse from start to end.
 
-    The stroke curves, speeds up and slows down (minimum jerk), lasts what Fitts's law predicts for its
-    length and the target's size, trembles slightly and, when long, sometimes overshoots and comes back.
+    With the optional `cursory` package installed, a movement recorded from a real person, fitted to these
+    ends; otherwise a generated curve (see _curved_path).
     """
+    path = _replayed_path(start, end) if _recorded and math.dist(start, end) >= 1 else _curved_path(start, end, target_size)
+    width, height = bounds
+    return [(min(max(x, 0), width - 1), min(max(y, 0), height - 1), ms) for x, y, ms in path]
+
+
+def _replayed_path(start: tuple[float, float], end: tuple[float, float]) -> list[tuple[int, int, int]]:
+    assert _recorded is not None
+    points, times = _recorded(start, end)
+    path: list[tuple[int, int, int]] = []
+    previous = times[0]
+    for i, ((x, y), ms) in enumerate(zip(points[1:], times[1:]), start=1):
+        point = (round(end[0]), round(end[1])) if i == len(points) - 1 else (round(x), round(y))
+        if path and point == path[-1][:2] and i < len(points) - 1:
+            continue  # the same pixel again: no event; its time goes to the next one
+        path.append((point[0], point[1], ms - previous))
+        previous = ms
+    return path
+
+
+def _curved_path(start: tuple[float, float], end: tuple[float, float], target_size: float) -> list[tuple[int, int, int]]:
+    """A generated stroke: it curves, speeds up and slows down (minimum jerk), lasts what Fitts's law
+    predicts for its length and the target's size, trembles slightly and, when long, sometimes overshoots."""
     distance = math.dist(start, end)
     if distance > 250 and _random.random() < 0.3:
         overshoot = _random.uniform(4, 14) / distance
@@ -33,11 +63,8 @@ def mouse_path(
             end[0] + (end[0] - start[0]) * overshoot + _random.uniform(-3, 3),
             end[1] + (end[1] - start[1]) * overshoot + _random.uniform(-3, 3),
         )
-        path = _stroke(start, beyond, target_size) + _stroke(beyond, end, target_size * 2)
-    else:
-        path = _stroke(start, end, target_size)
-    width, height = bounds
-    return [(min(max(x, 0), width - 1), min(max(y, 0), height - 1), ms) for x, y, ms in path]
+        return _stroke(start, beyond, target_size) + _stroke(beyond, end, target_size * 2)
+    return _stroke(start, end, target_size)
 
 
 def _stroke(start: tuple[float, float], end: tuple[float, float], target_size: float) -> list[tuple[int, int, int]]:

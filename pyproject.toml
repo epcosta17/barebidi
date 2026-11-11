@@ -1,8 +1,8 @@
 [project]
 name = "barebidi"
-version = "0.1.1"
+version = "0.1.2"
 description = "Async Firefox automation for Python, speaking WebDriver BiDi directly, no driver binaries."
-readme = "README.md"
+dynamic = ["readme"]
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Ernesto" }]
@@ -23,6 +23,9 @@ classifiers = [
     "Typing :: Typed",
 ]
 
+[project.optional-dependencies]
+cursory = ["cursory>=2.1"]
+
 [project.urls]
 Homepage = "https://github.com/epcosta17/barebidi"
 Documentation = "https://barebidi.readthedocs.io"
@@ -30,12 +33,23 @@ Repository = "https://github.com/epcosta17/barebidi"
 Issues = "https://github.com/epcosta17/barebidi/issues"
 
 [dependency-groups]
-dev = ["pytest>=8", "pytest-asyncio>=0.24"]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "cursory>=2.1"]
 docs = ["zensical", "mkdocstrings[python]>=0.27", "ruff>=0.6"]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-fancy-pypi-readme"]
 build-backend = "hatchling.build"
+
+# PyPI can't play videos: on PyPI, the README's demo video becomes a thumbnail linking to it.
+[tool.hatch.metadata.hooks.fancy-pypi-readme]
+content-type = "text/markdown"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+path = "README.md"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '(?m)^(https://github\.com/user-attachments/assets/\S+)$'
+replacement = '[![Demo video: Firefox driven by barebidi](https://raw.githubusercontent.com/epcosta17/barebidi/master/docs/assets/demo-thumbnail.jpg)](\1)'
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/barebidi"]

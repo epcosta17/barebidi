@@ -9,7 +9,7 @@ barebidi sends input as real mouse and keyboard events through Firefox, not as J
 
 1. scroll the element into view with the mouse wheel, in notches with pauses, if it is off screen;
 2. aim at a point of the element that nothing else covers, near its center but rarely right on it;
-3. move the mouse there along a curved path, from wherever the pointer was;
+3. move the mouse there from wherever the pointer was, along a path a hand would take (see below);
 4. check the pointer really is over the element, and aim again if the page moved it meanwhile;
 5. for `click()`, press and release the button with a short hold.
 
@@ -17,6 +17,23 @@ barebidi sends input as real mouse and keyboard events through Firefox, not as J
 await tab.select("#menu").hover()
 await tab.find("Settings").click()
 ```
+
+## Recorded movements
+
+By default barebidi generates each mouse path: a curve that speeds up and slows down, with a duration that
+depends on distance and target size, a slight tremor and an occasional overshoot.
+
+Install the optional [Cursory](https://github.com/Vinyzu/cursory) package and it replays movements recorded
+from real people instead. Cursory holds over two thousand of them; for each move it picks one that suits the
+direction and distance and fits it to the start and end points, keeping the hand's own timing, hesitations
+and corrections. Generated curves are smooth in ways hands are not, which classifiers can pick up.
+
+```
+pip install "barebidi[cursory]"
+```
+
+Nothing else changes: barebidi uses it whenever it is installed. Cursory is LGPL-3.0 and depends on numpy;
+barebidi itself stays MIT and dependency-light without it.
 
 ## Typing
 

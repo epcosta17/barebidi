@@ -7,6 +7,8 @@ BAREBIDI
 
 https://github.com/user-attachments/assets/3df66962-4ffc-43e8-b46e-d9f661dd7d90
 
+*The demo: regular Firefox from Mozilla, driven by barebidi through public bot-detection test pages.*
+
 - **built for Firefox**: the regular Firefox you download from Mozilla, nothing patched
 - no driver binaries: no geckodriver, no Selenium
 - no Playwright-style browser builds: it drives the Firefox you already have
@@ -24,7 +26,8 @@ closed shadow roots and input routing. Chrome support may come later; Firefox is
 
 - `tab.select(css)`, `tab.find(text)`, `tab.xpath(expr)`, all waiting until the element appears
 - chainable queries: `await tab.select("form").select("button").click()`
-- mouse and keyboard input with human timings and trajectories, on by default
+- mouse and keyboard input with human timings and trajectories, on by default; with
+  `pip install "barebidi[cursory]"`, mouse movements replayed from recordings of real people
 - elements inside cross-site iframes and closed shadow roots, the ones scripts can't reach
 - proxies with credentials (no password prompt), plus per-context locale and time zone
 - isolated browser contexts: separate cookies, storage and proxy in one browser
@@ -48,6 +51,16 @@ To update:
 ```
 pip install -U barebidi
 ```
+
+Optionally, for mouse movements replayed from recordings of real people instead of generated curves:
+
+```
+pip install "barebidi[cursory]"
+```
+
+This adds [Cursory](https://github.com/Vinyzu/cursory) (LGPL-3.0) and numpy. barebidi uses it whenever it is
+installed; without it, it stays MIT with a single dependency. See
+[Mouse and keyboard](https://barebidi.readthedocs.io/en/latest/guides/input/#recorded-movements).
 
 # Usage examples
 
