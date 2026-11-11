@@ -32,6 +32,7 @@ class Context:
         return hash(self.id)
 
     async def new_tab(self, url: str | None = None, background: bool = False) -> Tab:
+        """Open a tab in this context, loading `url` if given; `background` keeps the current tab in front."""
         result = await self.browser.connection.send(
             "browsingContext.create", {"type": "tab", "background": background, "userContext": self.id}
         )
@@ -41,15 +42,18 @@ class Context:
         return tab
 
     async def tabs(self) -> list[Tab]:
+        """This context's open tabs."""
         tree = await self.browser.connection.send("browsingContext.getTree", {"maxDepth": 0})
         return [Tab(self.browser, c["context"]) for c in tree["contexts"] if c.get("userContext", "default") == self.id]
 
     async def get(self, url: str, new_tab: bool = False) -> Tab:
+        """Load `url` in this context's first tab (a new one if it has none, or with `new_tab`) and wait for it."""
         tabs = [] if new_tab else await self.tabs()
         tab = tabs[0] if tabs else await self.new_tab()
         return await tab.get(url)
 
     async def cookies(self, domain: str | None = None) -> list[dict]:
+        """This context's cookies, or only those of `domain`, as dicts in BiDi's format with a plain `value`."""
         params: dict = {"partition": self._partition}
         if domain:
             params["filter"] = {"domain": domain}
@@ -64,6 +68,7 @@ class Context:
             await self.browser.connection.send("storage.setCookie", {"cookie": fields, "partition": self._partition})
 
     async def clear_cookies(self) -> None:
+        """Delete every cookie of this context."""
         await self.browser.connection.send("storage.deleteCookies", {"partition": self._partition})
 
     async def close(self) -> None:

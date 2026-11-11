@@ -1,15 +1,37 @@
 [project]
 name = "barebidi"
-version = "0.1.0"
+version = "0.1.1"
 description = "Async Firefox automation for Python, speaking WebDriver BiDi directly, no driver binaries."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
+authors = [{ name = "Ernesto" }]
 requires-python = ">=3.12"
 dependencies = ["websockets>=13"]
+keywords = ["firefox", "webdriver-bidi", "bidi", "browser-automation", "web-scraping", "camoufox", "asyncio"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP :: Browsers",
+    "Topic :: Software Development :: Testing",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/epcosta17/barebidi"
+Documentation = "https://barebidi.readthedocs.io"
+Repository = "https://github.com/epcosta17/barebidi"
+Issues = "https://github.com/epcosta17/barebidi/issues"
 
 [dependency-groups]
 dev = ["pytest>=8", "pytest-asyncio>=0.24"]
+docs = ["mkdocs-material>=9.5", "mkdocstrings[python]>=0.27", "ruff>=0.6"]
 
 [build-system]
 requires = ["hatchling"]

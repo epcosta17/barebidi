@@ -27,19 +27,24 @@ class Tab(Frame):
         return self
 
     async def reload(self, wait: Wait = "complete", timeout: float | None = None) -> "Tab":
+        """Reload the page and wait for it like get() does."""
         await self.send("browsingContext.reload", {"context": self.id, "wait": wait}, timeout)
         return self
 
     async def back(self) -> None:
+        """Go back one page in the tab's history."""
         await self.send("browsingContext.traverseHistory", {"context": self.id, "delta": -1})
 
     async def forward(self) -> None:
+        """Go forward one page in the tab's history."""
         await self.send("browsingContext.traverseHistory", {"context": self.id, "delta": 1})
 
     async def activate(self) -> None:
+        """Bring the tab to the front."""
         await self.send("browsingContext.activate", {"context": self.id})
 
     async def close(self) -> None:
+        """Close the tab."""
         await self.send("browsingContext.close", {"context": self.id})
 
     async def scroll(self, delta_y: int) -> None:
@@ -53,10 +58,13 @@ class Tab(Frame):
         await self._perform({"type": "wheel", "id": "wheel", "actions": actions})
 
     async def screenshot(self, path: str | Path | None = None, full_page: bool = False) -> bytes:
+        """PNG of what's on screen, or of the whole page with `full_page`; also saved to `path` if given."""
         params = {"context": self.id, "origin": "document" if full_page else "viewport"}
         return _save_png(await self.send("browsingContext.captureScreenshot", params), path)
 
     async def on(self, event: str, handler: "Handler") -> str:
+        """Like Browser.on, passing only the events of this tab and its iframes."""
+
         def scoped(params: dict) -> Any:
             context = params.get("context")
             if context is None or self.browser.top_level(context) == self.id:
@@ -87,9 +95,11 @@ class Tab(Frame):
         return await self.browser._network.intercept(handler, url, phase, contexts=[self.id])
 
     async def block(self, *urls: str, resource_types: tuple[str, ...] | list[str] = ()) -> "Intercept":
+        """Like Browser.block, for this tab's requests."""
         return await self.browser._network.block(urls, resource_types, contexts=[self.id])
 
     async def set_extra_headers(self, headers: dict[str, str]) -> None:
+        """Like Browser.set_extra_headers, for this tab's requests."""
         await self.browser._network.set_extra_headers(headers, contexts=[self.id])
 
     async def on_response(self, handler: "ResponseHandler", url: "ResponseMatch" = None) -> Callable[[], None]:

@@ -55,6 +55,8 @@ _INTO_PARENT = """function (x, y) {
 
 
 class JavaScriptError(Exception):
+    """An exception thrown by page JavaScript run through evaluate() or call_function(); `details` has BiDi's report."""
+
     def __init__(self, details: dict):
         super().__init__(details.get("text", "JavaScript exception"))
         self.details = details
@@ -79,9 +81,11 @@ class Frame:
         return hash(self.id)
 
     async def send(self, method: str, params: dict | None = None, timeout: float | None = None) -> dict:
+        """Send a raw WebDriver BiDi command and return its result; the context isn't added to `params` for you."""
         return await self.browser.connection.send(method, params, timeout)
 
     async def url(self) -> str:
+        """The document's current URL."""
         tree = await self.send("browsingContext.getTree", {"root": self.id, "maxDepth": 0})
         return tree["contexts"][0]["url"]
 
@@ -94,6 +98,7 @@ class Frame:
         return self._unwrap(result)
 
     async def call_function(self, function: str, *args: Any, this: Any = None, isolated: bool = False) -> Any:
+        """Call the JavaScript `function` with `args` (and `this`), converted both ways like evaluate()."""
         params = {
             "functionDeclaration": function,
             "arguments": [serialize(a) for a in args],
@@ -105,9 +110,11 @@ class Frame:
         return self._unwrap(await self.send("script.callFunction", params))
 
     async def content(self) -> str:
+        """The document's whole HTML, as it is now."""
         return await self.evaluate("document.documentElement.outerHTML", isolated=True)
 
     async def title(self) -> str:
+        """The document's title."""
         return await self.evaluate("document.title", isolated=True)
 
     def select(self, css: str, timeout: float = 10.0) -> ElementQuery:
@@ -116,9 +123,11 @@ class Frame:
         return ElementQuery(lambda: self._first({"type": "css", "value": css}, timeout, css), css)
 
     async def select_all(self, css: str, timeout: float = 10.0) -> list[Element]:
+        """Every element matching `css`, waiting up to `timeout` seconds for at least one; empty if none appears."""
         return await self._wait_for({"type": "css", "value": css}, timeout)
 
     async def xpath(self, expression: str, timeout: float = 10.0) -> list[Element]:
+        """Every element matching the XPath `expression`, waiting like select_all()."""
         return await self._wait_for({"type": "xpath", "value": expression}, timeout)
 
     def find(self, text: str, exact: bool = False, timeout: float = 10.0) -> ElementQuery:

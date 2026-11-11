@@ -61,6 +61,8 @@ _SELECT_CONTENTS = """function () {
 
 
 class Element:
+    """An element of a page (or a shadow root), found with select(), find(), xpath() or select_all()."""
+
     def __init__(self, frame: "Frame", remote: dict):
         self.frame = frame
         self.shared_id: str = remote["sharedId"]
@@ -77,10 +79,12 @@ class Element:
 
     @property
     def tab(self) -> "Tab":
+        """The tab the element is in."""
         return self.frame.tab
 
     @property
     def reference(self) -> dict:
+        """The element as a BiDi shared reference, for raw protocol commands."""
         return {"sharedId": self.shared_id}
 
     async def call(self, function: str, *args: Any, isolated: bool = False) -> Any:
@@ -88,18 +92,23 @@ class Element:
         return await self.frame.call_function(function, *args, this=self, isolated=isolated)
 
     async def text(self) -> str:
+        """The element's text content, hidden text included (`textContent`)."""
         return await self.call("function() { return this.textContent }", isolated=True)
 
     async def inner_text(self) -> str:
+        """The element's text as rendered on screen (`innerText`)."""
         return await self.call("function() { return this.innerText }", isolated=True)
 
     async def html(self) -> str:
+        """The element's HTML, itself included (`outerHTML`)."""
         return await self.call("function() { return this.outerHTML }", isolated=True)
 
     async def get_attribute(self, name: str) -> str | None:
+        """The attribute's value, or None if the element doesn't have it."""
         return await self.call("function(n) { return this.getAttribute(n) }", name, isolated=True)
 
     async def get_property(self, name: str) -> Any:
+        """A JavaScript property of the element, e.g. `value` or `checked`."""
         return await self.call("function(n) { return this[n] }", name)
 
     async def shadow_root(self) -> "Element | None":
@@ -137,16 +146,20 @@ class Element:
         await self.call("function() { this.scrollIntoView({block: 'center', inline: 'center'}) }", isolated=True)
 
     async def hover(self) -> None:
+        """Scroll the element into view if needed and move the mouse onto it."""
         await self._move_here()
 
     async def click(self) -> None:
+        """Move the mouse onto the element like hover() and click it."""
         await self._move_here(then=human.click_actions(self.tab.browser.humanize))
 
     async def type(self, text: str) -> None:
+        """Click the element, then type `text` key by key, with Shift for capitals and symbols."""
         await self.click()
         await self.frame._perform({"type": "key", "id": "keyboard", "actions": human.key_actions(text, self.tab.browser.humanize)})
 
     async def press(self, key: str) -> None:
+        """Press and release one key: a character or a name like `Enter`, `Tab`, `Escape`, `ArrowDown`."""
         value = KEYS.get(key, key)
         hold = [{"type": "pause", "duration": human.between(50, 120)}] if self.tab.browser.humanize else []
         await self.frame._perform(
@@ -164,9 +177,11 @@ class Element:
         return ElementQuery(lambda: self.frame._first({"type": "css", "value": css}, timeout, css, start=[self.reference]), css)
 
     async def select_all(self, css: str, timeout: float = 10.0) -> list["Element"]:
+        """Every element inside this one matching `css` (see Frame.select_all)."""
         return await self.frame._wait_for({"type": "css", "value": css}, timeout, start=[self.reference])
 
     async def screenshot(self, path: str | Path | None = None) -> bytes:
+        """PNG of the element; also saved to `path` if given."""
         from .tab import _save_png
 
         result = await self.frame.send(
@@ -259,60 +274,78 @@ class ElementQuery:
         return self._lookup().__await__()
 
     def select(self, css: str, timeout: float = 10.0) -> "ElementQuery":
+        """A query for the first element matching `css` inside this one."""
         async def lookup() -> Element:
             return await (await self).select(css, timeout)
 
         return ElementQuery(lookup, f"{self._label} {css}")
 
     async def select_all(self, css: str, timeout: float = 10.0) -> list[Element]:
+        """Find this element, then every element inside it matching `css`."""
         return await (await self).select_all(css, timeout)
 
     async def click(self) -> None:
+        """Find the element, then Element.click()."""
         await (await self).click()
 
     async def hover(self) -> None:
+        """Find the element, then Element.hover()."""
         await (await self).hover()
 
     async def type(self, text: str) -> None:
+        """Find the element, then Element.type()."""
         await (await self).type(text)
 
     async def press(self, key: str) -> None:
+        """Find the element, then Element.press()."""
         await (await self).press(key)
 
     async def clear(self) -> None:
+        """Find the element, then Element.clear()."""
         await (await self).clear()
 
     async def set_files(self, *paths: str | Path) -> None:
+        """Find the element, then Element.set_files()."""
         await (await self).set_files(*paths)
 
     async def scroll_into_view(self) -> None:
+        """Find the element, then Element.scroll_into_view()."""
         await (await self).scroll_into_view()
 
     async def text(self) -> str:
+        """Find the element, then Element.text()."""
         return await (await self).text()
 
     async def inner_text(self) -> str:
+        """Find the element, then Element.inner_text()."""
         return await (await self).inner_text()
 
     async def html(self) -> str:
+        """Find the element, then Element.html()."""
         return await (await self).html()
 
     async def get_attribute(self, name: str) -> str | None:
+        """Find the element, then Element.get_attribute()."""
         return await (await self).get_attribute(name)
 
     async def get_property(self, name: str) -> Any:
+        """Find the element, then Element.get_property()."""
         return await (await self).get_property(name)
 
     async def call(self, function: str, *args: Any, isolated: bool = False) -> Any:
+        """Find the element, then Element.call()."""
         return await (await self).call(function, *args, isolated=isolated)
 
     async def shadow_root(self) -> Element | None:
+        """Find the element, then Element.shadow_root()."""
         return await (await self).shadow_root()
 
     async def content_frame(self) -> "Frame":
+        """Find the element, then Element.content_frame()."""
         return await (await self).content_frame()
 
     async def screenshot(self, path: str | Path | None = None) -> bytes:
+        """Find the element, then Element.screenshot()."""
         return await (await self).screenshot(path)
 
 

@@ -17,6 +17,8 @@ _GONE = "Firefox closed the connection: it was stopped, exited or crashed"
 
 
 class BidiError(Exception):
+    """An error answer from the browser to a command: `error` is BiDi's code, e.g. `no such element`."""
+
     def __init__(self, error: str, message: str, stacktrace: str | None = None):
         super().__init__(f"{error}: {message}")
         self.error = error
@@ -29,6 +31,8 @@ class BrowserClosedError(ConnectionError):
 
 
 class Connection:
+    """The websocket to Firefox's WebDriver BiDi server: commands, results and events (Browser.connection)."""
+
     def __init__(self, ws: ClientConnection, timeout: float | None = None):
         self._ws = ws
         self.timeout = timeout  # default seconds to wait for each answer; None waits forever
@@ -40,10 +44,12 @@ class Connection:
 
     @classmethod
     async def connect(cls, url: str, timeout: float | None = None) -> "Connection":
+        """Open a connection to the BiDi websocket at `url`."""
         return cls(await connect(url, max_size=None), timeout)
 
     @property
     def closed(self) -> bool:
+        """Whether the connection is gone."""
         return self._reader.done()
 
     async def send(self, method: str, params: dict | None = None, timeout: float | None = None) -> dict:
@@ -73,10 +79,12 @@ class Connection:
         self._handlers[event].append(handler)
 
     def off(self, event: str, handler: Handler) -> None:
+        """Stop calling `handler` for `event`."""
         if handler in self._handlers.get(event, []):
             self._handlers[event].remove(handler)
 
     async def close(self) -> None:
+        """Close the websocket."""
         await self._ws.close()
         await asyncio.gather(self._reader, return_exceptions=True)
 

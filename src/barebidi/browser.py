@@ -54,6 +54,7 @@ DEFAULT_PREFS: dict[str, Any] = {
 
 
 def find_firefox() -> str:
+    """The Firefox to launch: `FIREFOX_PATH` if set, then the usual install locations, then the PATH."""
     if path := os.environ.get("FIREFOX_PATH"):
         return path
     candidates = {
@@ -162,6 +163,7 @@ class Browser:
         await self.stop()
 
     async def start(self) -> "Browser":
+        """Launch Firefox and open the BiDi session; `async with Browser(...)` calls it for you."""
         executable = self.executable_path or find_firefox()
         # A snap's /tmp is its own: keep our temporary folders where a snap-packaged Firefox can reach them.
         self._scratch = Path.home() / "snap" / "firefox" / "common" if _is_snap(executable) else None
@@ -216,6 +218,7 @@ class Browser:
         return self
 
     async def stop(self) -> None:
+        """Close Firefox and delete the temporary profile and downloads; safe to call more than once."""
         if self._process is None:
             return
         if hasattr(self, "connection") and not self.connection.closed:
@@ -227,13 +230,16 @@ class Browser:
         await self._cleanup()
 
     async def tabs(self) -> list[Tab]:
+        """Every open tab, in every context."""
         tree = await self.connection.send("browsingContext.getTree", {"maxDepth": 0})
         return [Tab(self, c["context"]) for c in tree["contexts"]]
 
     async def new_tab(self, url: str | None = None, background: bool = False) -> Tab:
+        """Open a tab in the default context, loading `url` if given; `background` keeps the current tab in front."""
         return await self.context.new_tab(url, background)
 
     async def get(self, url: str, new_tab: bool = False) -> Tab:
+        """Load `url` in the default context's first tab (a new one with `new_tab`) and wait for it to load."""
         return await self.context.get(url, new_tab)
 
     async def new_context(self, *, proxy: str | None = None, locale: str | None = None, timezone: str | None = None) -> Context:
@@ -248,12 +254,15 @@ class Browser:
         return context
 
     async def cookies(self, domain: str | None = None) -> list[dict]:
+        """The default context's cookies, or only those of `domain`."""
         return await self.context.cookies(domain)
 
     async def set_cookies(self, cookies: Iterable[dict]) -> None:
+        """Add cookies to the default context, in the format cookies() returns."""
         await self.context.set_cookies(cookies)
 
     async def clear_cookies(self) -> None:
+        """Delete every cookie of the default context."""
         await self.context.clear_cookies()
 
     async def on_dialog(self, handler: DialogHandler) -> Callable[[], None]:
@@ -292,6 +301,7 @@ class Browser:
         return context
 
     def user_context_of(self, context: str) -> str:
+        """The id of the context (BiDi user context) a tab or iframe belongs to."""
         return self._user_contexts.get(context, "default")
 
     async def _relay(self, proxy: Proxy) -> Relay:
@@ -455,4 +465,5 @@ class Browser:
 
 
 async def start(**kwargs: Any) -> Browser:
+    """Create a Browser with these options and start it; stop it with `await browser.stop()`."""
     return await Browser(**kwargs).start()

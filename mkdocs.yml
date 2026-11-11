@@ -1,0 +1,70 @@
+site_name: barebidi
+site_description: Async Firefox automation for Python, speaking WebDriver BiDi directly, no driver binaries.
+site_url: https://barebidi.readthedocs.io/
+repo_url: https://github.com/epcosta17/barebidi
+repo_name: epcosta17/barebidi
+edit_uri: edit/master/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep orange
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Guides:
+      - Finding elements: guides/elements.md
+      - Mouse and keyboard: guides/input.md
+      - Iframes and shadow roots: guides/frames.md
+      - Network: guides/network.md
+      - Contexts, proxies and cookies: guides/contexts.md
+      - Dialogs, uploads and downloads: guides/dialogs-downloads.md
+      - Events and the raw protocol: guides/protocol.md
+      - Driving Camoufox: guides/camoufox.md
+  - API reference: api.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.details
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            show_signature_annotations: true
+            separate_signature: true
+            members_order: source
+            filters: ["!^_"]
+            docstring_style: sphinx
+            merge_init_into_class: true

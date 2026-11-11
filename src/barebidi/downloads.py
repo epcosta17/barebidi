@@ -40,6 +40,8 @@ class Download:
 
 
 class ExpectedDownload:
+    """Holder for the download expect_download() waits for, set when the block ends."""
+
     def __init__(self) -> None:
         self.download: Download | None = None
 

@@ -34,6 +34,8 @@ def url_matcher(pattern: str | None) -> Callable[[str], bool]:
 
 
 class Request:
+    """A request the page made: `url`, `method`, `headers`, `resource_type` and the `context` it came from."""
+
     def __init__(self, browser: "Browser", params: dict):
         data = params["request"]
         self._browser = browser
@@ -49,12 +51,15 @@ class Request:
 
     @property
     def tab(self) -> "Tab | None":
+        """The tab that made the request, or None if it didn't come from a page."""
         from .tab import Tab
 
         return Tab(self._browser, self._browser.top_level(self.context)) if self.context else None
 
 
 class Response:
+    """A response: `status`, `status_text`, `url`, `headers`, `mime_type`, `from_cache` and its `request`."""
+
     def __init__(self, request: Request, data: dict, collector: str | None):
         self.request = request
         self.url: str = data["url"]
@@ -70,6 +75,7 @@ class Response:
         return f"<Response {self.status} {self.url}>"
 
     async def body(self) -> bytes:
+        """The body as bytes; only once the response has completed (on_response, expect_response)."""
         if self._body is None:
             if self._collector is None:
                 raise RuntimeError("the body is only available once the response has completed")
@@ -80,6 +86,7 @@ class Response:
         return self._body
 
     async def text(self) -> str:
+        """The body decoded with the charset in Content-Type, UTF-8 otherwise."""
         charset = re.search(r"charset=([\w-]+)", self.headers.get("content-type", ""))
         try:
             return (await self.body()).decode(charset.group(1) if charset else "utf-8", errors="replace")
@@ -87,6 +94,7 @@ class Response:
             return (await self.body()).decode("utf-8", errors="replace")
 
     async def json(self) -> Any:
+        """The body parsed as JSON."""
         return json.loads(await self.body())
 
 
@@ -129,6 +137,7 @@ class InterceptedRequest(Request):
             await self._settle("network.continueResponse", params)
 
     async def abort(self) -> None:
+        """Fail the request, as if the network had dropped it."""
         await self._settle("network.failRequest", {"request": self.id})
 
     async def fulfill(self, body: str | bytes = b"", *, status: int = 200, headers: dict[str, str] | None = None) -> None:
@@ -151,6 +160,8 @@ ResponseMatch = str | Callable[[Response], bool] | None
 
 
 class Intercept:
+    """A request interception set up with intercept() or block()."""
+
     def __init__(self, network: "Network", intercept_id: str, handler: InterceptHandler, matches: Callable[[str], bool]):
         self._network = network
         self.id = intercept_id
@@ -158,11 +169,14 @@ class Intercept:
         self.matches = matches
 
     async def remove(self) -> None:
+        """Stop intercepting."""
         if self._network._intercepts.pop(self.id, None) is not None:
             await self._network.browser.connection.send("network.removeIntercept", {"intercept": self.id})
 
 
 class ExpectedResponse:
+    """Holder for the response expect_response() waits for, set when the block ends."""
+
     def __init__(self) -> None:
         self.response: Response | None = None
 

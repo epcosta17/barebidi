@@ -3,6 +3,8 @@ BAREBIDI
 
 ### Async Firefox automation for Python, speaking WebDriver BiDi straight to the browser
 
+**[Documentation](https://barebidi.readthedocs.io)** · **[GitHub](https://github.com/epcosta17/barebidi)** · **[PyPI](https://pypi.org/project/barebidi/)**
+
 https://github.com/user-attachments/assets/3df66962-4ffc-43e8-b46e-d9f661dd7d90
 
 - **built for Firefox**: the regular Firefox you download from Mozilla, nothing patched
