@@ -12,3 +12,4 @@ docker/*.txt
 *proxies*.txt
 webshare*.txt
 .DS_Store
+site/
