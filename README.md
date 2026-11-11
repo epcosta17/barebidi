@@ -169,6 +169,13 @@ result = await tab.send("browsingContext.captureScreenshot", {"context": tab.id,
 [Camoufox](https://github.com/daijro/camoufox) is a patched Firefox build. Since it is still Firefox and
 still speaks WebDriver BiDi, barebidi drives it like any other Firefox: point `executable_path` at its binary.
 
+**Why drive Camoufox with barebidi**
+
+- no Playwright and no Node.js driver process: Python talks to Camoufox directly
+- standard WebDriver BiDi instead of Juggler, Playwright's own patched-in protocol
+- nothing injected into the page: barebidi's scripts run in isolated BiDi sandboxes
+- the same API drives stock Firefox and Camoufox; switch with `executable_path=`
+
 1. Download Camoufox with its own tool:
 
    ```
@@ -187,19 +194,25 @@ still speaks WebDriver BiDi, barebidi drives it like any other Firefox: point `e
    browser = await bb.start(executable_path="/path/to/camoufox", stealth=False)
    ```
 
-4. Optionally, pass Camoufox its settings as JSON in the `CAMOU_CONFIG_1` environment variable through
-   `env=`. A config longer than 32767 characters goes in pieces: `CAMOU_CONFIG_1`, `CAMOU_CONFIG_2`, ...
-   See Camoufox's documentation for the available keys.
+4. Optionally, let the `camoufox` package build a coherent fingerprint (screen, fonts, hardware, OS) and
+   hand it to barebidi. `launch_options()` doesn't start Playwright; it only returns how to launch Camoufox:
 
    ```python
-   import json
+   from camoufox.utils import launch_options
 
-   config = {"navigator.hardwareConcurrency": 8}
+   opts = launch_options(os="windows")
    browser = await bb.start(
-       executable_path="/path/to/camoufox",
+       executable_path=opts["executable_path"],
+       args=opts["args"],
+       prefs=opts["firefox_user_prefs"],
+       env={k: v for k, v in opts["env"].items() if k.startswith("CAMOU_")},
        stealth=False,
-       env={"CAMOU_CONFIG_1": json.dumps(config)},
    )
    ```
 
-The `camoufox` package is only needed to download the browser; barebidi doesn't depend on it.
+   `launch_options()` returns a copy of your whole environment; keep only the `CAMOU_*` variables, barebidi
+   passes the rest on by itself. When the fingerprint claims another OS or GPU than your machine's, Camoufox
+   adds canvas and WebGL noise and warns about it; `canvas_noise=False` turns that off.
+
+The `camoufox` package is only needed to download the browser and, optionally, to build fingerprints;
+barebidi doesn't depend on it.
